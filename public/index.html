@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Chat</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header>
+    <h1>Chat</h1>
+  </header>
+
+  <main>
+    <section id="chat-view">
+      <div id="messages" class="list"></div>
+    </section>
+  </main>
+
+  <form id="composer">
+    <textarea id="input" rows="1" placeholder="Typ een bericht… (Ctrl/Cmd+Enter om te versturen)"></textarea>
+    <div class="composer-buttons">
+      <button id="send-btn" type="submit">Send</button>
+    </div>
+  </form>
+
+  <script src="app.js"></script>
+</body>
+</html>
