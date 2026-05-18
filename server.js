@@ -56,8 +56,40 @@ app.post('/api/messages', (req, res) => {
   res.status(201).json(msg);
 });
 
+app.patch('/api/messages/:id', (req, res) => {
+  const id = Number(req.params.id);
+  const msg = db.prepare('SELECT * FROM messages WHERE id = ?').get(id);
+  if (!msg) {
+    return res.status(404).json({ error: 'Bericht niet gevonden.' });
+  }
+  if (msg.type !== 'text') {
+    return res.status(400).json({ error: 'Alleen tekstberichten kunnen bewerkt worden.' });
+  }
+  const content = typeof req.body.content === 'string' ? req.body.content.trim() : '';
+  if (!content) {
+    return res.status(400).json({ error: 'Bericht mag niet leeg zijn.' });
+  }
+  db.prepare('UPDATE messages SET content = ?, edited_at = ? WHERE id = ?')
+    .run(content, Date.now(), id);
+  const updated = db.prepare('SELECT * FROM messages WHERE id = ?').get(id);
+  broadcast('message:edit', updated);
+  res.json(updated);
+});
+
+app.delete('/api/messages/:id', (req, res) => {
+  const id = Number(req.params.id);
+  const msg = db.prepare('SELECT * FROM messages WHERE id = ?').get(id);
+  if (!msg) {
+    return res.status(404).json({ error: 'Bericht niet gevonden.' });
+  }
+  db.prepare('DELETE FROM messages WHERE id = ?').run(id);
+  broadcast('message:delete', { id });
+  res.json({ ok: true });
+});
+
 /* ---------- Start ---------- */
-const PORT = process.env.PORT || 3000;
+// Poort: env PORT, anders 1e CLI-argument, anders 3000.
+const PORT = process.env.PORT || process.argv[2] || 3000;
 app.listen(PORT, () => {
   console.log(`Speakeasy draait op http://localhost:${PORT}`);
 });
