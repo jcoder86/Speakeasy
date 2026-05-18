@@ -87,6 +87,72 @@ app.delete('/api/messages/:id', (req, res) => {
   res.json({ ok: true });
 });
 
+/* ---------- To-do's ---------- */
+// Nieuwste boven (id DESC): net toegevoegde items direct zichtbaar.
+app.get('/api/todos', (req, res) => {
+  res.json(db.prepare('SELECT * FROM todos ORDER BY id DESC').all());
+});
+
+app.post('/api/todos', (req, res) => {
+  const text = typeof req.body.text === 'string' ? req.body.text.trim() : '';
+  if (!text) {
+    return res.status(400).json({ error: 'To-do mag niet leeg zijn.' });
+  }
+  const info = db
+    .prepare('INSERT INTO todos (text, created_at) VALUES (?, ?)')
+    .run(text, Date.now());
+  const todo = db
+    .prepare('SELECT * FROM todos WHERE id = ?')
+    .get(Number(info.lastInsertRowid));
+  broadcast('todo:new', todo);
+  res.status(201).json(todo);
+});
+
+app.patch('/api/todos/:id', (req, res) => {
+  const id = Number(req.params.id);
+  const todo = db.prepare('SELECT * FROM todos WHERE id = ?').get(id);
+  if (!todo) {
+    return res.status(404).json({ error: 'To-do niet gevonden.' });
+  }
+
+  // Afvinken/uitvinken: raakt done + completed_at, niet de tekst.
+  if (typeof req.body.done === 'boolean') {
+    const done = req.body.done ? 1 : 0;
+    const completedAt = done ? Date.now() : null;
+    db.prepare('UPDATE todos SET done = ?, completed_at = ? WHERE id = ?')
+      .run(done, completedAt, id);
+    const updated = db.prepare('SELECT * FROM todos WHERE id = ?').get(id);
+    broadcast('todo:toggle', updated);
+    return res.json(updated);
+  }
+
+  // Tekst bewerken: raakt text + edited_at, niet done/completed_at.
+  if (typeof req.body.text === 'string') {
+    const text = req.body.text.trim();
+    if (!text) {
+      return res.status(400).json({ error: 'To-do mag niet leeg zijn.' });
+    }
+    db.prepare('UPDATE todos SET text = ?, edited_at = ? WHERE id = ?')
+      .run(text, Date.now(), id);
+    const updated = db.prepare('SELECT * FROM todos WHERE id = ?').get(id);
+    broadcast('todo:edit', updated);
+    return res.json(updated);
+  }
+
+  return res.status(400).json({ error: 'Niets om bij te werken.' });
+});
+
+app.delete('/api/todos/:id', (req, res) => {
+  const id = Number(req.params.id);
+  const todo = db.prepare('SELECT * FROM todos WHERE id = ?').get(id);
+  if (!todo) {
+    return res.status(404).json({ error: 'To-do niet gevonden.' });
+  }
+  db.prepare('DELETE FROM todos WHERE id = ?').run(id);
+  broadcast('todo:delete', { id });
+  res.json({ ok: true });
+});
+
 /* ---------- Start ---------- */
 // Poort: env PORT, anders 1e CLI-argument, anders 3000.
 const PORT = process.env.PORT || process.argv[2] || 3000;

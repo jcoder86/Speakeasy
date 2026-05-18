@@ -9,11 +9,16 @@
 <body>
   <header>
     <h1>Chat</h1>
+    <button id="view-toggle" type="button">To-do</button>
   </header>
 
   <main>
     <section id="chat-view">
       <div id="messages" class="list"></div>
+    </section>
+    <section id="todo-view" hidden>
+      <div id="todos" class="list"></div>
+      <p id="todo-empty" class="empty-hint">Nog geen to-do's. Voeg er een toe vanuit de chat met "Add to-do".</p>
     </section>
   </main>
 

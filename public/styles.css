@@ -120,6 +120,79 @@ main {
   width: min(680px, 90%);
 }
 
+/* ---------- To-do view ---------- */
+#todo-view {
+  min-height: 100%;
+}
+
+.empty-hint {
+  padding: 24px 16px;
+  color: var(--muted);
+  text-align: center;
+}
+
+.todo {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 6px 10px;
+}
+
+.todo-check-wrap {
+  flex: 0 0 auto;
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.todo-check {
+  width: 22px;
+  height: 22px;
+  cursor: pointer;
+}
+
+.todo-body {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding-top: 10px;
+}
+
+.todo-text {
+  white-space: pre-wrap;
+  word-break: break-word;
+  line-height: 1.4;
+}
+
+.todo.done .todo-text {
+  text-decoration: line-through;
+  color: var(--muted);
+}
+
+.todo-meta {
+  margin-top: 2px;
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+
+.todo .item-actions {
+  margin-top: 0;
+  padding-top: 6px;
+}
+
+.todo.editing {
+  flex-direction: column;
+}
+
+.todo.editing .edit-textarea {
+  margin-top: 4px;
+}
+
 /* ---------- Composer ---------- */
 #composer {
   flex: 0 0 auto;
