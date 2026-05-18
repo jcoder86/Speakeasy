@@ -24,11 +24,17 @@
 
   <form id="composer">
     <textarea id="input" rows="1" placeholder="Typ een bericht… (Ctrl/Cmd+Enter om te versturen)"></textarea>
+    <input id="image-input" type="file" accept="image/png,image/jpeg,image/gif,image/webp" hidden />
     <div class="composer-buttons">
+      <button id="upload-btn" type="button">Afbeelding</button>
       <button id="addtodo-btn" type="button">Add to-do</button>
       <button id="send-btn" type="submit">Send</button>
     </div>
   </form>
+
+  <div id="lightbox" class="lightbox" hidden>
+    <img id="lightbox-img" alt="Afbeelding op volledig formaat" />
+  </div>
 
   <script src="app.js"></script>
 </body>

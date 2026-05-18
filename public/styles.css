@@ -244,9 +244,47 @@ button:active {
   border-color: var(--accent);
 }
 
-/* Kleinere, secundaire knop naast Send (hoogte blijft 44px tap-target). */
-#addtodo-btn {
+/* Kleinere, secundaire knoppen naast Send (hoogte blijft 44px tap-target). */
+#addtodo-btn,
+#upload-btn {
   padding: 0 10px;
   font-size: 0.82rem;
   color: var(--muted);
+}
+
+/* ---------- Afbeeldingsbericht ---------- */
+.message-image {
+  display: block;
+  max-width: 100%;
+  max-height: 260px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.message.image-message {
+  padding: 6px;
+}
+
+/* ---------- Lightbox ---------- */
+.lightbox {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background: rgba(0, 0, 0, 0.85);
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  cursor: zoom-out;
+}
+
+.lightbox:not([hidden]) {
+  display: flex;
+}
+
+.lightbox img {
+  max-width: 95vw;
+  max-height: 95vh;
+  object-fit: contain;
+  border-radius: 4px;
 }

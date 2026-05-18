@@ -1,12 +1,47 @@
 'use strict';
 
 const path = require('node:path');
+const fs = require('node:fs');
+const crypto = require('node:crypto');
 const express = require('express');
-const { db } = require('./db');
+const multer = require('multer');
+const { db, UPLOADS_DIR } = require('./db');
 
 const app = express();
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
+app.use('/uploads', express.static(UPLOADS_DIR));
+
+/* ---------- Upload-config (multer) ---------- */
+const MAX_IMAGE_BYTES = 10 * 1024 * 1024; // 10MB
+// Toegestane mimetypes -> bestandsextensie. image/jpeg dekt jpg én jpeg.
+const ALLOWED_IMAGE_TYPES = {
+  'image/png': '.png',
+  'image/jpeg': '.jpg',
+  'image/gif': '.gif',
+  'image/webp': '.webp',
+};
+
+const upload = multer({
+  storage: multer.diskStorage({
+    destination: (req, file, cb) => cb(null, UPLOADS_DIR),
+    // UUID-bestandsnaam (geen originele naam: security + geen collisions).
+    filename: (req, file, cb) => {
+      const ext = ALLOWED_IMAGE_TYPES[file.mimetype] || '.bin';
+      cb(null, crypto.randomUUID() + ext);
+    },
+  }),
+  limits: { fileSize: MAX_IMAGE_BYTES },
+  fileFilter: (req, file, cb) => {
+    if (ALLOWED_IMAGE_TYPES[file.mimetype]) {
+      cb(null, true);
+    } else {
+      const err = new Error('Alleen png, jpg, jpeg, gif of webp toegestaan.');
+      err.code = 'INVALID_FILE_TYPE';
+      cb(err);
+    }
+  },
+}).single('image');
 
 /* ---------- SSE ---------- */
 const clients = new Set();
@@ -56,6 +91,38 @@ app.post('/api/messages', (req, res) => {
   res.status(201).json(msg);
 });
 
+app.post('/api/messages/image', (req, res) => {
+  upload(req, res, (err) => {
+    if (err) {
+      // Eventueel deels weggeschreven bestand opruimen.
+      if (req.file && req.file.path) {
+        fs.promises.unlink(req.file.path).catch(() => {});
+      }
+      if (err.code === 'LIMIT_FILE_SIZE') {
+        return res.status(413).json({ error: 'Afbeelding is te groot (max 10MB).' });
+      }
+      if (err.code === 'INVALID_FILE_TYPE') {
+        return res.status(400).json({ error: err.message });
+      }
+      return res.status(400).json({ error: 'Upload mislukt.' });
+    }
+    if (!req.file) {
+      return res.status(400).json({ error: 'Geen afbeelding ontvangen.' });
+    }
+    const info = db
+      .prepare(
+        `INSERT INTO messages (type, image_path, image_mime, image_size, created_at)
+         VALUES ('image', ?, ?, ?, ?)`,
+      )
+      .run(req.file.filename, req.file.mimetype, req.file.size, Date.now());
+    const msg = db
+      .prepare('SELECT * FROM messages WHERE id = ?')
+      .get(Number(info.lastInsertRowid));
+    broadcast('message:new', msg);
+    res.status(201).json(msg);
+  });
+});
+
 app.patch('/api/messages/:id', (req, res) => {
   const id = Number(req.params.id);
   const msg = db.prepare('SELECT * FROM messages WHERE id = ?').get(id);
@@ -83,6 +150,10 @@ app.delete('/api/messages/:id', (req, res) => {
     return res.status(404).json({ error: 'Bericht niet gevonden.' });
   }
   db.prepare('DELETE FROM messages WHERE id = ?').run(id);
+  // Hard delete: bij een afbeelding ook het bestand van schijf verwijderen.
+  if (msg.type === 'image' && msg.image_path) {
+    fs.promises.unlink(path.join(UPLOADS_DIR, msg.image_path)).catch(() => {});
+  }
   broadcast('message:delete', { id });
   res.json({ ok: true });
 });

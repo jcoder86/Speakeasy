@@ -9,6 +9,10 @@ const composer = document.getElementById('composer');
 const input = document.getElementById('input');
 const viewToggle = document.getElementById('view-toggle');
 const addTodoBtn = document.getElementById('addtodo-btn');
+const uploadBtn = document.getElementById('upload-btn');
+const imageInput = document.getElementById('image-input');
+const lightbox = document.getElementById('lightbox');
+const lightboxImg = document.getElementById('lightbox-img');
 
 // Client-side caches (id -> object).
 const messages = new Map();
@@ -81,11 +85,30 @@ function buildMessageEl(msg) {
 function renderMessageView(el, msg) {
   el.innerHTML = '';
   el.classList.remove('editing');
+  el.classList.toggle('image-message', msg.type === 'image');
 
-  const text = document.createElement('div');
-  text.className = 'message-text';
-  text.textContent = msg.content;
-  el.appendChild(text);
+  const actions = document.createElement('div');
+  actions.className = 'item-actions';
+
+  if (msg.type === 'image') {
+    const src = '/uploads/' + msg.image_path;
+    const img = document.createElement('img');
+    img.className = 'message-image';
+    img.src = src;
+    img.alt = 'Afbeelding';
+    img.loading = 'lazy';
+    img.addEventListener('click', () => openLightbox(src));
+    el.appendChild(img);
+    // Afbeeldingsbericht: kopiëren + verwijderen (geen bewerken).
+    actions.appendChild(makeBtn('Kopieer', () => copyImage(src)));
+  } else {
+    const text = document.createElement('div');
+    text.className = 'message-text';
+    text.textContent = msg.content;
+    el.appendChild(text);
+    // Tekstbericht: bewerken + verwijderen.
+    actions.appendChild(makeBtn('Bewerk', () => renderMessageEdit(el, msg)));
+  }
 
   const meta = document.createElement('div');
   meta.className = 'message-meta';
@@ -98,9 +121,6 @@ function renderMessageView(el, msg) {
   }
   el.appendChild(meta);
 
-  const actions = document.createElement('div');
-  actions.className = 'item-actions';
-  actions.appendChild(makeBtn('Bewerk', () => renderMessageEdit(el, msg)));
   actions.appendChild(makeBtn('Verwijder', () => deleteMessage(msg.id)));
   el.appendChild(actions);
 }
@@ -209,6 +229,89 @@ async function deleteMessage(id) {
     if (!res.ok) alert(await apiError(res));
   } catch {
     alert('Verwijderen mislukt: geen verbinding.');
+  }
+}
+
+/* ===================================================================
+   AFBEELDINGEN
+   =================================================================== */
+const ALLOWED_IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'];
+const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
+
+async function uploadImage(file) {
+  if (!file) return;
+  // Client-side voorcontrole (server valideert nogmaals, autoritair).
+  if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
+    alert('Alleen png, jpg, jpeg, gif of webp toegestaan.');
+    return;
+  }
+  if (file.size > MAX_IMAGE_BYTES) {
+    alert('Afbeelding is te groot (max 10MB).');
+    return;
+  }
+  const fd = new FormData();
+  fd.append('image', file);
+  try {
+    const res = await fetch('/api/messages/image', { method: 'POST', body: fd });
+    if (!res.ok) alert(await apiError(res));
+    // Bij succes komt het bericht via SSE binnen.
+  } catch {
+    alert('Upload mislukt: geen verbinding.');
+  }
+}
+
+/* ---------- Lightbox ---------- */
+function openLightbox(src) {
+  lightboxImg.src = src;
+  lightbox.hidden = false;
+}
+
+function closeLightbox() {
+  lightbox.hidden = true;
+  lightboxImg.removeAttribute('src');
+}
+
+lightbox.addEventListener('click', closeLightbox);
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && !lightbox.hidden) closeLightbox();
+});
+
+/* ---------- Kopiëren naar klembord ---------- */
+// Browsers ondersteunen op het klembord betrouwbaar alleen image/png;
+// jpg/gif/webp worden daarom eerst via een canvas naar PNG geconverteerd.
+function blobToPng(blob) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const url = URL.createObjectURL(blob);
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = img.naturalWidth;
+      canvas.height = img.naturalHeight;
+      canvas.getContext('2d').drawImage(img, 0, 0);
+      URL.revokeObjectURL(url);
+      canvas.toBlob(
+        (b) => (b ? resolve(b) : reject(new Error('conversie mislukt'))),
+        'image/png',
+      );
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error('afbeelding laden mislukt'));
+    };
+    img.src = url;
+  });
+}
+
+async function copyImage(src) {
+  try {
+    const resp = await fetch(src);
+    let blob = await resp.blob();
+    if (blob.type !== 'image/png') {
+      blob = await blobToPng(blob);
+    }
+    await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+  } catch (err) {
+    alert('Kopiëren naar klembord mislukt: ' + (err && err.message ? err.message : err));
   }
 }
 
@@ -412,6 +515,31 @@ addTodoBtn.addEventListener('click', async () => {
     input.value = '';
     autoGrow();
   }
+});
+
+// Afbeelding uploaden via knop -> verborgen file-input.
+uploadBtn.addEventListener('click', () => imageInput.click());
+imageInput.addEventListener('change', () => {
+  if (imageInput.files[0]) uploadImage(imageInput.files[0]);
+  imageInput.value = ''; // reset zodat dezelfde file opnieuw kan
+});
+
+// Plakken (Ctrl/Cmd+V) met een afbeelding op het klembord -> upload
+// als afbeeldingsbericht i.p.v. base64-tekst in de textarea.
+input.addEventListener('paste', (e) => {
+  const items = e.clipboardData && e.clipboardData.items;
+  if (!items) return;
+  for (const item of items) {
+    if (item.type && item.type.startsWith('image/')) {
+      const file = item.getAsFile();
+      if (file) {
+        e.preventDefault();
+        uploadImage(file);
+      }
+      return;
+    }
+  }
+  // Geen afbeelding gevonden: normale tekst-paste laten doorgaan.
 });
 
 function autoGrow() {
