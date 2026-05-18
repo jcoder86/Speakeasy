@@ -243,3 +243,10 @@ button:active {
   color: var(--accent-text);
   border-color: var(--accent);
 }
+
+/* Kleinere, secundaire knop naast Send (hoogte blijft 44px tap-target). */
+#addtodo-btn {
+  padding: 0 10px;
+  font-size: 0.82rem;
+  color: var(--muted);
+}

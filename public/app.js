@@ -8,6 +8,7 @@ const todoView = document.getElementById('todo-view');
 const composer = document.getElementById('composer');
 const input = document.getElementById('input');
 const viewToggle = document.getElementById('view-toggle');
+const addTodoBtn = document.getElementById('addtodo-btn');
 
 // Client-side caches (id -> object).
 const messages = new Map();
@@ -399,6 +400,17 @@ input.addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
     e.preventDefault();
     sendMessage();
+  }
+});
+
+// "Add to-do": tekst uit de textarea wordt een to-do; textarea leegt;
+// de gebruiker blijft in de chat-view (geen automatische switch).
+addTodoBtn.addEventListener('click', async () => {
+  if (!input.value.trim()) return;
+  const ok = await createTodo(input.value);
+  if (ok) {
+    input.value = '';
+    autoGrow();
   }
 });
 
