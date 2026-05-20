@@ -208,9 +208,11 @@ main {
   flex: 1 1 auto;
   resize: none;
   max-height: 160px;
-  min-height: 44px;
+  /* Hoog genoeg voor 2 leesbare regels (2 x line-height + padding + border). */
+  min-height: 72px;
   padding: 10px 12px;
   font: inherit;
+  line-height: 1.4;
   border: 1px solid var(--border);
   border-radius: 10px;
   background: var(--bg);
