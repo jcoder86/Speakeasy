@@ -564,3 +564,7 @@ function connectSSE() {
 loadMessages();
 loadTodos();
 connectSSE();
+
+// Cursor staat direct in de textarea zodra de app opent, naast het
+// autofocus-attribuut als vangnet voor browsers die dat niet honoreren.
+input.focus();

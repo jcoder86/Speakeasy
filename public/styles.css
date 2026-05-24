@@ -197,7 +197,8 @@ main {
 #composer {
   flex: 0 0 auto;
   display: flex;
-  align-items: flex-end;
+  flex-direction: column;   /* textarea boven, knoppen-rij eronder */
+  align-items: stretch;
   gap: 8px;
   padding: 10px 16px;
   background: var(--surface);
@@ -205,11 +206,11 @@ main {
 }
 
 #input {
-  flex: 1 1 auto;
+  width: 100%;
   resize: none;
   max-height: 160px;
-  /* Hoog genoeg voor 2 leesbare regels (2 x line-height + padding + border). */
-  min-height: 72px;
+  /* Hoog genoeg voor ~3 leesbare regels. */
+  min-height: 88px;
   padding: 10px 12px;
   font: inherit;
   line-height: 1.4;
@@ -220,8 +221,14 @@ main {
 
 .composer-buttons {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;        /* alles op één rij */
   gap: 8px;
+}
+
+/* Send is de primaire actie en de breedste knop: vult de resterende ruimte. */
+#send-btn {
+  flex: 1 1 auto;
+  min-width: 120px;
 }
 
 button {
