@@ -449,6 +449,99 @@ const upsertPrice = db.prepare(
    ON CONFLICT(ticker, date) DO UPDATE SET close = excluded.close`,
 );
 
+/* ---------- Nieuws: watchlist (Finnhub company-news) ---------- */
+// Cache-key = ticker; server-side cache 15 min zoals spec.
+const NEWS_CACHE = new Map();
+const NEWS_TTL_MS = 15 * 60 * 1000;
+const NEWS_PER_TICKER = 5;
+
+function dateStr(offsetDays) {
+  const d = new Date();
+  d.setUTCDate(d.getUTCDate() + offsetDays);
+  return d.toISOString().slice(0, 10);
+}
+
+async function fetchTickerNews(ticker, apiKey) {
+  const cacheKey = `stocks:${ticker}`;
+  const cached = NEWS_CACHE.get(cacheKey);
+  if (cached && Date.now() - cached.ts < NEWS_TTL_MS) return cached.data;
+  const url =
+    `https://finnhub.io/api/v1/company-news?symbol=${encodeURIComponent(ticker)}` +
+    `&from=${dateStr(-7)}&to=${dateStr(0)}&token=${encodeURIComponent(apiKey)}`;
+  try {
+    const r = await fetch(url);
+    if (!r.ok) return [];
+    const data = await r.json();
+    if (!Array.isArray(data)) return [];
+    // Sort newest first, dedup op url, max NEWS_PER_TICKER.
+    data.sort((a, b) => (b.datetime || 0) - (a.datetime || 0));
+    const seen = new Set();
+    const dedup = [];
+    for (const item of data) {
+      if (!item || !item.url || seen.has(item.url)) continue;
+      seen.add(item.url);
+      dedup.push(item);
+      if (dedup.length >= NEWS_PER_TICKER) break;
+    }
+    NEWS_CACHE.set(cacheKey, { data: dedup, ts: Date.now() });
+    return dedup;
+  } catch {
+    return [];
+  }
+}
+
+app.get('/api/news/stocks', async (req, res) => {
+  const apiKey = process.env.FINNHUB_API_KEY;
+  if (!apiKey) return res.json({ items: [] });
+  const list = db.prepare('SELECT * FROM watchlist ORDER BY added_at ASC').all();
+  const items = [];
+  for (const w of list) {
+    const news = await fetchTickerNews(w.ticker, apiKey);
+    for (const n of news) {
+      items.push({
+        id: `${w.ticker}-${n.id}`,
+        ticker: w.ticker,
+        title: n.headline || '(geen titel)',
+        summary: n.summary || '',
+        source: n.source || '',
+        url: n.url,
+        published_at: (typeof n.datetime === 'number' ? n.datetime : 0) * 1000,
+      });
+    }
+  }
+  items.sort((a, b) => b.published_at - a.published_at);
+  res.json({ items });
+});
+
+/* ---------- Nieuws: macro/AI (proxy naar externe feed.json) ---------- */
+const FEED_CACHE = new Map();
+
+app.get('/api/news/feed', async (req, res) => {
+  const feedUrl = process.env.FEED_URL;
+  if (!feedUrl) return res.json({ items: [], reason: 'FEED_URL niet ingesteld' });
+  const cached = FEED_CACHE.get(feedUrl);
+  if (cached && Date.now() - cached.ts < NEWS_TTL_MS) {
+    return res.json(cached.data);
+  }
+  try {
+    const r = await fetch(feedUrl);
+    if (!r.ok) {
+      return res.json({ items: [], reason: `feed HTTP ${r.status}` });
+    }
+    const data = await r.json();
+    const items = Array.isArray(data.items)
+      ? data.items
+          .filter((i) => (i.final_score ?? 0) >= 4)
+          .sort((a, b) => (b.final_score ?? 0) - (a.final_score ?? 0))
+      : [];
+    const result = { items, generated_at: data.generated_at || null };
+    FEED_CACHE.set(feedUrl, { data: result, ts: Date.now() });
+    res.json(result);
+  } catch {
+    res.json({ items: [], reason: 'feed niet bereikbaar' });
+  }
+});
+
 app.get('/api/quotes', async (req, res) => {
   const apiKey = process.env.FINNHUB_API_KEY;
   const list = db.prepare('SELECT * FROM watchlist ORDER BY added_at ASC').all();

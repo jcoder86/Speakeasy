@@ -20,6 +20,10 @@ const watchlistListEl = document.getElementById('watchlist-list');
 const watchlistAddForm = document.getElementById('watchlist-add-form');
 const watchlistTickerInput = document.getElementById('watchlist-ticker');
 const watchlistNameInput = document.getElementById('watchlist-name');
+const newsStocksListEl = document.getElementById('news-stocks-list');
+const newsStocksEmptyEl = document.getElementById('news-stocks-empty');
+const newsFeedListEl = document.getElementById('news-feed-list');
+const newsFeedEmptyEl = document.getElementById('news-feed-empty');
 const composer = document.getElementById('composer');
 const input = document.getElementById('input');
 const addTodoBtn = document.getElementById('addtodo-btn');
@@ -528,6 +532,108 @@ async function removeWatchlistItem(id) {
   }
 }
 
+/* ---------- Nieuws-secties ---------- */
+function relTime(ms) {
+  if (!ms) return '';
+  const diff = Date.now() - ms;
+  if (diff < 60_000) return 'net';
+  const m = Math.floor(diff / 60_000);
+  if (m < 60) return `${m}m geleden`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}u geleden`;
+  const d = Math.floor(h / 24);
+  if (d < 7) return `${d}d geleden`;
+  return new Date(ms).toLocaleDateString('nl-NL', { day: 'numeric', month: 'short' });
+}
+
+function buildNewsItem(item, withTicker) {
+  const el = document.createElement('article');
+  el.className = 'news-item';
+
+  const meta = document.createElement('div');
+  meta.className = 'news-meta';
+  if (item.source) {
+    const s = document.createElement('span');
+    s.className = 'news-source';
+    s.textContent = item.source;
+    meta.appendChild(s);
+  }
+  if (item.published_at) {
+    const t = document.createElement('span');
+    t.className = 'news-time';
+    t.textContent = relTime(item.published_at);
+    meta.appendChild(t);
+  }
+  if (withTicker && item.ticker) {
+    const chip = document.createElement('span');
+    chip.className = 'news-ticker';
+    chip.textContent = item.ticker;
+    meta.appendChild(chip);
+  }
+  el.appendChild(meta);
+
+  const title = document.createElement('h4');
+  title.className = 'news-title';
+  const a = document.createElement('a');
+  a.href = item.url;
+  a.target = '_blank';
+  a.rel = 'noopener noreferrer';
+  a.textContent = item.title || '(geen titel)';
+  title.appendChild(a);
+  el.appendChild(title);
+
+  const summary = item.summary_nl || item.summary;
+  if (summary) {
+    const p = document.createElement('p');
+    p.className = 'news-summary';
+    p.textContent = summary;
+    el.appendChild(p);
+  }
+  return el;
+}
+
+function renderNewsList(listEl, emptyEl, items, opts = {}) {
+  listEl.innerHTML = '';
+  const arr = Array.isArray(items) ? items : [];
+  if (arr.length === 0) {
+    emptyEl.hidden = false;
+    if (opts.reason) emptyEl.textContent = opts.reason;
+    return;
+  }
+  emptyEl.hidden = true;
+  for (const item of arr) listEl.appendChild(buildNewsItem(item, opts.withTicker));
+}
+
+async function loadStockNews() {
+  try {
+    const res = await fetch('/api/news/stocks');
+    if (!res.ok) {
+      renderNewsList(newsStocksListEl, newsStocksEmptyEl, [], { reason: 'Nieuws niet beschikbaar.' });
+      return;
+    }
+    const data = await res.json();
+    renderNewsList(newsStocksListEl, newsStocksEmptyEl, data.items, { withTicker: true });
+  } catch {
+    /* stille fallback */
+  }
+}
+
+async function loadFeedNews() {
+  try {
+    const res = await fetch('/api/news/feed');
+    if (!res.ok) {
+      renderNewsList(newsFeedListEl, newsFeedEmptyEl, [], { reason: 'Feed niet bereikbaar.' });
+      return;
+    }
+    const data = await res.json();
+    renderNewsList(newsFeedListEl, newsFeedEmptyEl, data.items, {
+      reason: data.reason || 'Pipeline nog niet actief.',
+    });
+  } catch {
+    /* stille fallback */
+  }
+}
+
 /* ===================================================================
    TO-DO'S + LABELS
    =================================================================== */
@@ -991,12 +1097,14 @@ function connectSSE() {
     renderWatchlistManager();
     renderQuotesStrip();
     loadQuotes();
+    loadStockNews();
   });
   source.addEventListener('watchlist:delete', (e) => {
     const { id } = JSON.parse(e.data);
     watchlist.delete(id);
     renderWatchlistManager();
     renderQuotesStrip();
+    loadStockNews();
   });
 }
 
@@ -1005,11 +1113,16 @@ loadMessages();
 loadLabels();
 loadTodos();
 loadWatchlist().then(loadQuotes);
+loadStockNews();
+loadFeedNews();
 connectSSE();
 setView('feed'); // default: dashboard/feed
 
-// Koersen elke 60s ophalen (server-cache is ook 60s → geen extra Finnhub-calls).
+// Koersen elke 60s (matcht server-cache).
 setInterval(loadQuotes, 60 * 1000);
+// Nieuws elke 15 min (matcht server-cache 15 min).
+setInterval(loadStockNews, 15 * 60 * 1000);
+setInterval(loadFeedNews, 15 * 60 * 1000);
 
 /* ---------- PWA service worker ---------- */
 if ('serviceWorker' in navigator) {
