@@ -29,8 +29,32 @@
     </section>
 
     <section id="todo-view" class="view">
+      <form id="todo-add-form">
+        <input id="todo-add-input" type="text" placeholder="Nieuwe to-do…" maxlength="500" autocomplete="off" />
+        <button id="todo-add-btn" type="submit" aria-label="Voeg to-do toe">+</button>
+      </form>
+
+      <div id="filter-bar">
+        <div id="filter-chips"></div>
+        <button id="filter-clear" type="button" hidden>Wis filter</button>
+        <details id="label-manager">
+          <summary>Labels beheren</summary>
+          <div id="label-mgmt-list"></div>
+          <form id="new-label-form">
+            <input id="new-label-name" type="text" placeholder="Labelnaam" maxlength="40" autocomplete="off" />
+            <input id="new-label-color" type="color" value="#3b82f6" aria-label="Kleur" />
+            <button type="submit">Toevoegen</button>
+          </form>
+        </details>
+      </div>
+
       <div id="todos" class="list"></div>
-      <p id="todo-empty" class="empty-hint">Nog geen to-do's. Voeg er een toe vanuit de chat met "Add to-do".</p>
+      <p id="todo-empty" class="empty-hint">Nog geen to-do's.</p>
+
+      <details id="done-section">
+        <summary>Afgerond (<span id="done-count">0</span>)</summary>
+        <div id="done-todos" class="list"></div>
+      </details>
     </section>
 
     <section id="chat-view" class="view">

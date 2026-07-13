@@ -12,7 +12,12 @@ fs.mkdirSync(UPLOADS_DIR, { recursive: true });
 
 const db = new DatabaseSync(path.join(DATA_DIR, 'chat.db'));
 
+// Foreign keys aanzetten (default off in SQLite) — nodig voor cascade delete
+// van todo_labels bij delete van een label of todo.
+db.exec('PRAGMA foreign_keys = ON');
+
 // Volledig schema in één keer (idempotent via IF NOT EXISTS).
+// Nieuwe tabellen zijn additief; bestaande data blijft ongemoeid.
 db.exec(`
   CREATE TABLE IF NOT EXISTS messages (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -33,6 +38,22 @@ db.exec(`
     edited_at    INTEGER,
     completed_at INTEGER
   );
+
+  CREATE TABLE IF NOT EXISTS labels (
+    id    INTEGER PRIMARY KEY AUTOINCREMENT,
+    name  TEXT    NOT NULL UNIQUE,
+    color TEXT    NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS todo_labels (
+    todo_id  INTEGER NOT NULL,
+    label_id INTEGER NOT NULL,
+    PRIMARY KEY (todo_id, label_id),
+    FOREIGN KEY (todo_id)  REFERENCES todos(id)  ON DELETE CASCADE,
+    FOREIGN KEY (label_id) REFERENCES labels(id) ON DELETE CASCADE
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_todo_labels_label ON todo_labels(label_id);
 `);
 
 module.exports = { db, DATA_DIR, UPLOADS_DIR };

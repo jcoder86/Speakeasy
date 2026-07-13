@@ -1,8 +1,19 @@
 'use strict';
 
 const messagesEl = document.getElementById('messages');
-const todosEl = document.getElementById('todos');
+const openTodosEl = document.getElementById('todos');
+const doneTodosEl = document.getElementById('done-todos');
+const doneCountEl = document.getElementById('done-count');
+const doneSectionEl = document.getElementById('done-section');
 const todoEmptyEl = document.getElementById('todo-empty');
+const todoAddForm = document.getElementById('todo-add-form');
+const todoAddInput = document.getElementById('todo-add-input');
+const filterChipsEl = document.getElementById('filter-chips');
+const filterClearBtn = document.getElementById('filter-clear');
+const labelMgmtListEl = document.getElementById('label-mgmt-list');
+const newLabelForm = document.getElementById('new-label-form');
+const newLabelName = document.getElementById('new-label-name');
+const newLabelColor = document.getElementById('new-label-color');
 const composer = document.getElementById('composer');
 const input = document.getElementById('input');
 const addTodoBtn = document.getElementById('addtodo-btn');
@@ -318,12 +329,154 @@ async function copyImage(src) {
 }
 
 /* ===================================================================
-   TO-DO'S
+   TO-DO'S + LABELS
    =================================================================== */
-function updateTodoEmptyHint() {
-  todoEmptyEl.hidden = todos.size > 0;
+const labels = new Map();  // id -> {id, name, color}
+const filter = new Set();  // actieve label-ids (leeg = geen filter)
+
+function containerFor(todo) {
+  return todo.done ? doneTodosEl : openTodosEl;
 }
 
+function todoMatchesFilter(todo) {
+  if (filter.size === 0) return true;
+  return (todo.labels || []).some((l) => filter.has(l.id));
+}
+
+function applyFilter() {
+  for (const [id, todo] of todos) {
+    const el = document.querySelector(`.todo[data-id="${id}"]`);
+    if (el) el.classList.toggle('filtered-out', !todoMatchesFilter(todo));
+  }
+  updateEmptyStates();
+}
+
+function updateEmptyStates() {
+  let openCount = 0;
+  let doneCount = 0;
+  for (const t of todos.values()) {
+    if (!todoMatchesFilter(t)) continue;
+    if (t.done) doneCount += 1;
+    else openCount += 1;
+  }
+  todoEmptyEl.hidden = openCount > 0;
+  doneCountEl.textContent = String(doneCount);
+  doneSectionEl.hidden = doneCount === 0;
+}
+
+/* ---------- Chip-helper ---------- */
+function makeLabelChip(label) {
+  const chip = document.createElement('span');
+  chip.className = 'chip';
+  chip.dataset.labelId = label.id;
+  chip.style.setProperty('--chip-color', label.color);
+  const dot = document.createElement('span');
+  dot.className = 'chip-dot';
+  chip.appendChild(dot);
+  const name = document.createElement('span');
+  name.textContent = label.name;
+  chip.appendChild(name);
+  return chip;
+}
+
+/* ---------- Filter-chips ---------- */
+function renderFilterChips() {
+  filterChipsEl.innerHTML = '';
+  for (const label of labels.values()) {
+    const chip = makeLabelChip(label);
+    chip.classList.add('clickable');
+    chip.classList.toggle('active', filter.has(label.id));
+    chip.addEventListener('click', () => {
+      if (filter.has(label.id)) filter.delete(label.id);
+      else filter.add(label.id);
+      renderFilterChips();
+      applyFilter();
+    });
+    filterChipsEl.appendChild(chip);
+  }
+  filterClearBtn.hidden = filter.size === 0;
+}
+
+filterClearBtn.addEventListener('click', () => {
+  filter.clear();
+  renderFilterChips();
+  applyFilter();
+});
+
+/* ---------- Labels beheren ---------- */
+function renderLabelManager() {
+  labelMgmtListEl.innerHTML = '';
+  if (labels.size === 0) {
+    const p = document.createElement('p');
+    p.className = 'muted-hint';
+    p.textContent = 'Nog geen labels — voeg er hieronder een toe.';
+    labelMgmtListEl.appendChild(p);
+    return;
+  }
+  for (const label of labels.values()) {
+    const row = document.createElement('div');
+    row.className = 'label-mgmt-row';
+    row.appendChild(makeLabelChip(label));
+    const del = document.createElement('button');
+    del.type = 'button';
+    del.className = 'icon-btn';
+    del.textContent = 'Verwijder';
+    del.addEventListener('click', () => deleteLabel(label.id));
+    row.appendChild(del);
+    labelMgmtListEl.appendChild(row);
+  }
+}
+
+newLabelForm.addEventListener('submit', (e) => {
+  e.preventDefault();
+  const name = newLabelName.value.trim();
+  const color = newLabelColor.value || '#3b82f6';
+  if (!name) return;
+  createLabel(name, color);
+});
+
+async function loadLabels() {
+  try {
+    const res = await fetch('/api/labels');
+    const rows = await res.json();
+    labels.clear();
+    for (const l of rows) labels.set(l.id, l);
+    renderFilterChips();
+    renderLabelManager();
+  } catch {
+    // stille fallback — pagina blijft werken zonder labels
+  }
+}
+
+async function createLabel(name, color) {
+  try {
+    const res = await fetch('/api/labels', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, color }),
+    });
+    if (!res.ok) {
+      alert(await apiError(res));
+      return;
+    }
+    newLabelName.value = '';
+    // SSE label:new zorgt voor de re-render bij alle clients.
+  } catch {
+    alert('Label toevoegen mislukt: geen verbinding.');
+  }
+}
+
+async function deleteLabel(id) {
+  try {
+    const res = await fetch(`/api/labels/${id}`, { method: 'DELETE' });
+    if (!res.ok) alert(await apiError(res));
+    // SSE label:delete + todo:edit voor de betroffen todos.
+  } catch {
+    alert('Label verwijderen mislukt: geen verbinding.');
+  }
+}
+
+/* ---------- Todo-rendering ---------- */
 function buildTodoEl(todo) {
   const el = document.createElement('div');
   el.className = 'todo';
@@ -356,16 +509,22 @@ function renderTodoView(el, todo) {
   text.textContent = todo.text;
   body.appendChild(text);
 
-  const meta = document.createElement('div');
-  meta.className = 'todo-meta';
-  meta.textContent = formatTime(todo.created_at);
+  if (todo.labels && todo.labels.length) {
+    const chipRow = document.createElement('div');
+    chipRow.className = 'todo-chips';
+    for (const l of todo.labels) chipRow.appendChild(makeLabelChip(l));
+    body.appendChild(chipRow);
+  }
+
   if (todo.edited_at) {
+    const meta = document.createElement('div');
+    meta.className = 'todo-meta';
     const edited = document.createElement('span');
     edited.className = 'edited-label';
-    edited.textContent = ' (bewerkt)';
+    edited.textContent = '(bewerkt)';
     meta.appendChild(edited);
+    body.appendChild(meta);
   }
-  body.appendChild(meta);
   el.appendChild(body);
 
   const actions = document.createElement('div');
@@ -384,9 +543,34 @@ function renderTodoEdit(el, todo) {
   ta.value = todo.text;
   el.appendChild(ta);
 
+  const selected = new Set((todo.labels || []).map((l) => l.id));
+  const labelSel = document.createElement('div');
+  labelSel.className = 'label-selector';
+  if (labels.size === 0) {
+    const hint = document.createElement('span');
+    hint.className = 'muted-hint';
+    hint.textContent = 'Geen labels — maak er een via de filterbalk.';
+    labelSel.appendChild(hint);
+  } else {
+    for (const label of labels.values()) {
+      const chip = makeLabelChip(label);
+      chip.classList.add('clickable');
+      chip.classList.toggle('selected', selected.has(label.id));
+      chip.addEventListener('click', () => {
+        if (selected.has(label.id)) selected.delete(label.id);
+        else selected.add(label.id);
+        chip.classList.toggle('selected', selected.has(label.id));
+      });
+      labelSel.appendChild(chip);
+    }
+  }
+  el.appendChild(labelSel);
+
   const actions = document.createElement('div');
   actions.className = 'item-actions';
-  actions.appendChild(makeBtn('Opslaan', () => saveTodoEdit(todo.id, ta.value)));
+  actions.appendChild(
+    makeBtn('Opslaan', () => saveTodoEdit(todo.id, ta.value, [...selected])),
+  );
   actions.appendChild(
     makeBtn('Annuleer', () => renderTodoView(el, todos.get(todo.id) || todo)),
   );
@@ -396,49 +580,74 @@ function renderTodoEdit(el, todo) {
   ta.setSelectionRange(ta.value.length, ta.value.length);
 }
 
+/* ---------- Todo state-updates ---------- */
 function addTodo(todo) {
   todos.set(todo.id, todo);
-  if (!todosEl.querySelector(`.todo[data-id="${todo.id}"]`)) {
-    todosEl.prepend(buildTodoEl(todo)); // nieuwste boven
-  }
-  updateTodoEmptyHint();
+  const existing = document.querySelector(`.todo[data-id="${todo.id}"]`);
+  if (existing) existing.remove();
+  containerFor(todo).prepend(buildTodoEl(todo));
+  applyFilter();
 }
 
 function updateTodo(todo) {
+  const prev = todos.get(todo.id);
   todos.set(todo.id, todo);
-  const el = todosEl.querySelector(`.todo[data-id="${todo.id}"]`);
-  if (!el) return;
-  if (el.classList.contains('editing')) return; // niet clobberen tijdens edit
-  renderTodoView(el, todo);
+  const existing = document.querySelector(`.todo[data-id="${todo.id}"]`);
+  if (existing && existing.classList.contains('editing')) return; // niet clobberen
+  if (existing) {
+    // Done-state gewisseld → verplaatsen; anders in-place her-renderen zodat
+    // de positie in de lijst behouden blijft.
+    if (prev && !!prev.done !== !!todo.done) {
+      existing.remove();
+      containerFor(todo).prepend(buildTodoEl(todo));
+    } else {
+      renderTodoView(existing, todo);
+    }
+  } else {
+    containerFor(todo).prepend(buildTodoEl(todo));
+  }
+  applyFilter();
 }
 
 function removeTodo(id) {
   todos.delete(id);
-  const el = todosEl.querySelector(`.todo[data-id="${id}"]`);
+  const el = document.querySelector(`.todo[data-id="${id}"]`);
   if (el) el.remove();
-  updateTodoEmptyHint();
+  updateEmptyStates();
 }
 
 async function loadTodos() {
   const res = await fetch('/api/todos');
-  const rows = await res.json(); // al gesorteerd nieuwste-eerst
-  todosEl.innerHTML = '';
+  const rows = await res.json(); // nieuwste-eerst
   todos.clear();
-  for (const todo of rows) {
-    todos.set(todo.id, todo);
-    todosEl.appendChild(buildTodoEl(todo));
+  openTodosEl.innerHTML = '';
+  doneTodosEl.innerHTML = '';
+  for (const t of rows) {
+    todos.set(t.id, t);
+    containerFor(t).appendChild(buildTodoEl(t));
   }
-  updateTodoEmptyHint();
+  applyFilter();
 }
 
-async function createTodo(text) {
-  const value = text.trim();
+/* ---------- Quick-add vanuit de to-do view ---------- */
+todoAddForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const text = todoAddInput.value.trim();
+  if (!text) return;
+  const ok = await createTodo(text);
+  if (ok) todoAddInput.value = '';
+});
+
+async function createTodo(text, labelIds) {
+  const value = String(text || '').trim();
   if (!value) return false;
+  const body = { text: value };
+  if (Array.isArray(labelIds) && labelIds.length) body.labels = labelIds;
   try {
     const res = await fetch('/api/todos', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text: value }),
+      body: JSON.stringify(body),
     });
     if (!res.ok) {
       alert(await apiError(res));
@@ -464,14 +673,16 @@ async function toggleTodo(id, done) {
   }
 }
 
-async function saveTodoEdit(id, raw) {
+async function saveTodoEdit(id, raw, labelIds) {
   const text = raw.trim();
   if (!text) return;
+  const body = { text };
+  if (Array.isArray(labelIds)) body.labels = labelIds;
   try {
     const res = await fetch(`/api/todos/${id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text }),
+      body: JSON.stringify(body),
     });
     if (!res.ok) {
       alert(await apiError(res));
@@ -479,8 +690,9 @@ async function saveTodoEdit(id, raw) {
     }
     const updated = await res.json();
     todos.set(updated.id, updated);
-    const el = todosEl.querySelector(`.todo[data-id="${updated.id}"]`);
+    const el = document.querySelector(`.todo[data-id="${updated.id}"]`);
     if (el) renderTodoView(el, updated);
+    applyFilter();
   } catch {
     alert('Bewerken mislukt: geen verbinding.');
   }
@@ -560,10 +772,24 @@ function connectSSE() {
   source.addEventListener('todo:edit', (e) => updateTodo(JSON.parse(e.data)));
   source.addEventListener('todo:toggle', (e) => updateTodo(JSON.parse(e.data)));
   source.addEventListener('todo:delete', (e) => removeTodo(JSON.parse(e.data).id));
+  source.addEventListener('label:new', (e) => {
+    const l = JSON.parse(e.data);
+    labels.set(l.id, l);
+    renderFilterChips();
+    renderLabelManager();
+  });
+  source.addEventListener('label:delete', (e) => {
+    const { id } = JSON.parse(e.data);
+    labels.delete(id);
+    filter.delete(id);
+    renderFilterChips();
+    renderLabelManager();
+  });
 }
 
 /* ---------- Init ---------- */
 loadMessages();
+loadLabels();
 loadTodos();
 connectSSE();
 setView('feed'); // default: dashboard/feed

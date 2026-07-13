@@ -182,17 +182,174 @@ body[data-view="chat"] #chat-view {
 .message.editing { width: min(680px, 90%); }
 
 /* =====================================================================
-   To-do item
+   To-do view: quick-add, filterbalk, labels, items, done-sectie
    ===================================================================== */
+#todo-view { gap: 8px; }
+
+/* Quick-add */
+#todo-add-form {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+#todo-add-input {
+  flex: 1 1 auto;
+  min-height: 44px;
+  padding: 0 12px;
+  font: inherit;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+}
+#todo-add-btn {
+  flex: 0 0 auto;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0 14px;
+  font-size: 1.25rem;
+  font-weight: 700;
+  background: var(--accent);
+  color: var(--accent-text);
+  border-color: var(--accent);
+}
+
+/* Filter-balk + label-beheer */
+#filter-bar { margin-bottom: 4px; }
+#filter-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+#filter-chips:empty { display: none; }
+#filter-clear {
+  min-height: 32px;
+  padding: 0 10px;
+  margin-top: 6px;
+  font-size: 0.78rem;
+  font-weight: 500;
+  background: transparent;
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+}
+
+#label-manager {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px dashed var(--border);
+}
+#label-manager summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 0.82rem;
+  padding: 4px 0;
+  list-style: none;
+}
+#label-manager summary::-webkit-details-marker { display: none; }
+#label-manager summary::before { content: "▸ "; margin-right: 2px; }
+#label-manager[open] summary::before { content: "▾ "; }
+
+#label-mgmt-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px 0;
+}
+.label-mgmt-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 0;
+}
+.label-mgmt-row .icon-btn {
+  margin-left: auto;
+  min-height: 32px;
+  padding: 0 8px;
+  font-size: 0.75rem;
+}
+
+#new-label-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 4px;
+}
+#new-label-name {
+  flex: 1 1 140px;
+  min-height: 40px;
+  padding: 0 10px;
+  font: inherit;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+}
+#new-label-color {
+  flex: 0 0 auto;
+  width: 44px;
+  min-height: 40px;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  cursor: pointer;
+}
+#new-label-form button {
+  flex: 0 0 auto;
+  min-height: 40px;
+  padding: 0 12px;
+  font-size: 0.85rem;
+}
+
+/* Chip (label) */
+.chip {
+  --chip-color: #6b7280;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--chip-color) 15%, transparent);
+  color: var(--text);
+  border: 1px solid color-mix(in srgb, var(--chip-color) 45%, transparent);
+  line-height: 1.2;
+}
+.chip-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--chip-color);
+  flex: 0 0 auto;
+}
+.chip.clickable {
+  cursor: pointer;
+  user-select: none;
+  min-height: 32px;
+  padding: 4px 10px;
+}
+.chip.active,
+.chip.selected {
+  background: var(--chip-color);
+  color: #fff;
+  border-color: var(--chip-color);
+}
+.chip.active .chip-dot,
+.chip.selected .chip-dot { background: #fff; }
+
+/* To-do item — condensed, alles op één rij */
+#todos, #done-todos { gap: 4px; }
+
 .todo {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 6px;
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 12px;
-  padding: 6px 10px;
+  border-radius: 10px;
+  padding: 2px 8px 2px 2px;
 }
+.todo.filtered-out { display: none; }
 
 .todo-check-wrap {
   flex: 0 0 auto;
@@ -203,7 +360,6 @@ body[data-view="chat"] #chat-view {
   justify-content: center;
   cursor: pointer;
 }
-
 .todo-check {
   width: 22px;
   height: 22px;
@@ -213,33 +369,75 @@ body[data-view="chat"] #chat-view {
 .todo-body {
   flex: 1 1 auto;
   min-width: 0;
-  padding-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
-
 .todo-text {
   white-space: pre-wrap;
   word-break: break-word;
-  line-height: 1.4;
+  line-height: 1.35;
 }
-
 .todo.done .todo-text {
   text-decoration: line-through;
   color: var(--muted);
 }
-
+.todo-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
 .todo-meta {
-  margin-top: 2px;
-  font-size: 0.72rem;
+  font-size: 0.7rem;
   color: var(--muted);
 }
 
 .todo .item-actions {
+  flex: 0 0 auto;
+  flex-wrap: nowrap;
   margin-top: 0;
-  padding-top: 6px;
+  padding-top: 0;
+}
+.todo .icon-btn {
+  min-height: 36px;
+  padding: 0 8px;
+  font-size: 0.74rem;
 }
 
-.todo.editing { flex-direction: column; }
-.todo.editing .edit-textarea { margin-top: 4px; }
+/* Edit-modus: alles verticaal in de kaart */
+.todo.editing {
+  flex-direction: column;
+  align-items: stretch;
+  padding: 8px;
+}
+.todo.editing .edit-textarea { margin-top: 0; }
+.label-selector {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 2px;
+}
+.muted-hint {
+  font-size: 0.8rem;
+  color: var(--muted);
+  font-style: italic;
+}
+
+/* Afgerond-sectie */
+#done-section {
+  margin-top: 8px;
+}
+#done-section summary {
+  cursor: pointer;
+  padding: 6px 4px;
+  color: var(--muted);
+  font-weight: 600;
+  font-size: 0.9rem;
+  list-style: none;
+}
+#done-section summary::-webkit-details-marker { display: none; }
+#done-section summary::before { content: "▸ "; margin-right: 2px; }
+#done-section[open] summary::before { content: "▾ "; }
 
 /* =====================================================================
    Composer (leeft binnen chat-view)
