@@ -11,7 +11,7 @@
  * de oude cache en fetchen clients de nieuwe versie.
  */
 
-const CACHE_VERSION = 'janapp-v1';
+const CACHE_VERSION = 'janapp-v2';
 const STATIC_ASSETS = [
   '/',
   '/index.html',
