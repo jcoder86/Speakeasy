@@ -8,55 +8,123 @@
   --muted: #6b7280;
   --accent: #2563eb;
   --accent-text: #ffffff;
+  --nav-h: 60px;
 }
 
-html, body {
-  height: 100%;
-}
+html, body { height: 100%; }
 
 body {
+  min-height: 100dvh;
   display: flex;
   flex-direction: column;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   background: var(--bg);
   color: var(--text);
+  overflow: hidden;
 }
 
-/* ---------- Header ---------- */
-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 10px 16px;
-  background: var(--surface);
-  border-bottom: 1px solid var(--border);
+/* =====================================================================
+   Header + navigatie
+   ===================================================================== */
+/* Mobiel: geen header, wel bottom-nav */
+#app-header { display: none; }
+
+#mobile-nav {
   flex: 0 0 auto;
+  display: flex;
+  gap: 0;
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  padding-bottom: env(safe-area-inset-bottom);
+  z-index: 10;
 }
 
-header h1 {
-  font-size: 1.25rem;
+.nav-btn {
+  flex: 1 1 auto;
+  min-height: var(--nav-h);
+  padding: 0 8px;
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--muted);
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  cursor: pointer;
 }
 
-/* ---------- Main / lijst ---------- */
+.nav-btn.active {
+  color: var(--accent);
+}
+
+.nav-btn:active { transform: translateY(1px); }
+
+/* =====================================================================
+   Main + views
+   ===================================================================== */
 main {
   flex: 1 1 auto;
-  overflow-y: auto;
-  -webkit-overflow-scrolling: touch;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
-#chat-view {
-  height: 100%;
+.view {
+  display: none;
+  flex: 1 1 auto;
+  min-height: 0;
+  flex-direction: column;
+}
+
+body[data-view="feed"] #feed-view,
+body[data-view="todo"] #todo-view,
+body[data-view="chat"] #chat-view {
+  display: flex;
+}
+
+/* Feed & to-do: hele view scrolt */
+#feed-view, #todo-view {
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 16px;
+}
+
+.feed-placeholder {
+  padding: 40px 20px;
+  text-align: center;
+  color: var(--muted);
+}
+.feed-placeholder h2 { margin-bottom: 8px; }
+
+/* Chat: berichten scrollen, composer blijft onderin */
+#chat-view { overflow: hidden; }
+
+#messages {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 16px;
 }
 
 .list {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  padding: 16px;
 }
 
-/* ---------- Bericht ---------- */
+#todos { padding: 0; }
+
+.empty-hint {
+  padding: 24px 16px;
+  color: var(--muted);
+  text-align: center;
+}
+
+/* =====================================================================
+   Chat-bericht
+   ===================================================================== */
 .message {
   align-self: flex-start;
   max-width: min(680px, 90%);
@@ -78,11 +146,9 @@ main {
   color: var(--muted);
 }
 
-.edited-label {
-  font-style: italic;
-}
+.edited-label { font-style: italic; }
 
-/* ---------- Item-acties (bewerk/verwijder) ---------- */
+/* Item-acties (bewerk/verwijder) — gedeeld tussen berichten en to-do's */
 .item-actions {
   display: flex;
   flex-wrap: wrap;
@@ -101,10 +167,7 @@ main {
   color: var(--muted);
   cursor: pointer;
 }
-
-.icon-btn:active {
-  transform: translateY(1px);
-}
+.icon-btn:active { transform: translateY(1px); }
 
 .edit-textarea {
   width: 100%;
@@ -116,21 +179,11 @@ main {
   border-radius: 8px;
 }
 
-.message.editing {
-  width: min(680px, 90%);
-}
+.message.editing { width: min(680px, 90%); }
 
-/* ---------- To-do view ---------- */
-#todo-view {
-  min-height: 100%;
-}
-
-.empty-hint {
-  padding: 24px 16px;
-  color: var(--muted);
-  text-align: center;
-}
-
+/* =====================================================================
+   To-do item
+   ===================================================================== */
 .todo {
   display: flex;
   align-items: flex-start;
@@ -185,19 +238,16 @@ main {
   padding-top: 6px;
 }
 
-.todo.editing {
-  flex-direction: column;
-}
+.todo.editing { flex-direction: column; }
+.todo.editing .edit-textarea { margin-top: 4px; }
 
-.todo.editing .edit-textarea {
-  margin-top: 4px;
-}
-
-/* ---------- Composer ---------- */
+/* =====================================================================
+   Composer (leeft binnen chat-view)
+   ===================================================================== */
 #composer {
   flex: 0 0 auto;
   display: flex;
-  flex-direction: column;   /* textarea boven, knoppen-rij eronder */
+  flex-direction: column;
   align-items: stretch;
   gap: 8px;
   padding: 10px 16px;
@@ -209,7 +259,6 @@ main {
   width: 100%;
   resize: none;
   max-height: 160px;
-  /* Hoog genoeg voor ~3 leesbare regels. */
   min-height: 88px;
   padding: 10px 12px;
   font: inherit;
@@ -221,14 +270,8 @@ main {
 
 .composer-buttons {
   display: flex;
-  flex-wrap: nowrap;        /* alles op één rij */
+  flex-wrap: nowrap;
   gap: 8px;
-}
-
-/* Send is de primaire actie en de breedste knop: vult de resterende ruimte. */
-#send-btn {
-  flex: 1 1 auto;
-  min-width: 120px;
 }
 
 button {
@@ -242,18 +285,16 @@ button {
   color: var(--text);
   cursor: pointer;
 }
-
-button:active {
-  transform: translateY(1px);
-}
+button:active { transform: translateY(1px); }
 
 #send-btn {
+  flex: 1 1 auto;
+  min-width: 120px;
   background: var(--accent);
   color: var(--accent-text);
   border-color: var(--accent);
 }
 
-/* Kleinere, secundaire knoppen naast Send (hoogte blijft 44px tap-target). */
 #addtodo-btn,
 #upload-btn {
   padding: 0 10px;
@@ -261,7 +302,9 @@ button:active {
   color: var(--muted);
 }
 
-/* ---------- Afbeeldingsbericht ---------- */
+/* =====================================================================
+   Afbeeldingsbericht + lightbox
+   ===================================================================== */
 .message-image {
   display: block;
   max-width: 100%;
@@ -270,11 +313,8 @@ button:active {
   cursor: pointer;
 }
 
-.message.image-message {
-  padding: 6px;
-}
+.message.image-message { padding: 6px; }
 
-/* ---------- Lightbox ---------- */
 .lightbox {
   display: none;
   position: fixed;
@@ -286,14 +326,72 @@ button:active {
   padding: 16px;
   cursor: zoom-out;
 }
-
-.lightbox:not([hidden]) {
-  display: flex;
-}
-
+.lightbox:not([hidden]) { display: flex; }
 .lightbox img {
   max-width: 95vw;
   max-height: 95vh;
   object-fit: contain;
   border-radius: 4px;
+}
+
+/* =====================================================================
+   Desktop (≥1024px): dashboard-grid met feed + to-do, chat als aparte tab
+   ===================================================================== */
+@media (min-width: 1024px) {
+  body { overflow: hidden; }
+
+  #mobile-nav { display: none; }
+
+  #app-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 16px;
+    padding: 12px 24px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    flex: 0 0 auto;
+  }
+  #app-header h1 { font-size: 1.4rem; }
+
+  #desktop-nav { display: flex; gap: 8px; }
+  #desktop-nav .nav-btn {
+    min-height: 44px;
+    padding: 0 20px;
+    border-radius: 8px;
+    background: var(--bg);
+    color: var(--muted);
+    border: 1px solid var(--border);
+  }
+  #desktop-nav .nav-btn.active {
+    background: var(--accent);
+    color: var(--accent-text);
+    border-color: var(--accent);
+  }
+
+  /* Dashboard-modus: feed + to-do naast elkaar, chat verborgen */
+  body:not([data-view="chat"]) main {
+    display: grid;
+    grid-template-columns: 3fr 2fr;
+    gap: 16px;
+    padding: 16px;
+  }
+  body:not([data-view="chat"]) #feed-view,
+  body:not([data-view="chat"]) #todo-view {
+    display: flex;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow-y: auto;
+  }
+  body:not([data-view="chat"]) #chat-view { display: none; }
+
+  /* Chat-modus: alleen chat-view, full-width */
+  body[data-view="chat"] main { display: flex; }
+  body[data-view="chat"] #feed-view,
+  body[data-view="chat"] #todo-view { display: none; }
+  body[data-view="chat"] #chat-view { display: flex; }
+
+  #messages, .message { align-items: flex-start; }
+  .message { max-width: min(680px, 80%); }
 }

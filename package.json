@@ -1,8 +1,8 @@
 {
-  "name": "speakeasy",
-  "version": "0.1.0",
+  "name": "janapp",
+  "version": "0.2.0",
   "private": true,
-  "description": "Chat-app met to-do list en afbeeldingen",
+  "description": "JanApp — persoonlijk dashboard (feed, to-do, chat) als PWA",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",

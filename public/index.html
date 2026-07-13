@@ -2,35 +2,56 @@
 <html lang="nl">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Chat</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="robots" content="noindex, nofollow" />
+  <meta name="theme-color" content="#2563eb" />
+  <link rel="manifest" href="/manifest.json" />
+  <link rel="apple-touch-icon" href="/icon-192.png" />
+  <link rel="icon" type="image/png" href="/icon-192.png" />
+  <title>JanApp</title>
   <link rel="stylesheet" href="styles.css" />
 </head>
-<body>
-  <header>
-    <h1>Chat</h1>
-    <button id="view-toggle" type="button">To-do</button>
+<body data-view="feed">
+  <header id="app-header">
+    <h1>JanApp</h1>
+    <nav id="desktop-nav">
+      <button class="nav-btn" data-view-target="feed" type="button">Dashboard</button>
+      <button class="nav-btn" data-view-target="chat" type="button">Chat</button>
+    </nav>
   </header>
 
   <main>
-    <section id="chat-view">
-      <div id="messages" class="list"></div>
+    <section id="feed-view" class="view">
+      <div class="feed-placeholder">
+        <h2>Feed</h2>
+        <p>Koersen en nieuws komen in fase 2 en 3.</p>
+      </div>
     </section>
-    <section id="todo-view" hidden>
+
+    <section id="todo-view" class="view">
       <div id="todos" class="list"></div>
       <p id="todo-empty" class="empty-hint">Nog geen to-do's. Voeg er een toe vanuit de chat met "Add to-do".</p>
     </section>
+
+    <section id="chat-view" class="view">
+      <div id="messages" class="list"></div>
+      <form id="composer">
+        <textarea id="input" rows="1" autofocus placeholder="Typ een bericht…"></textarea>
+        <input id="image-input" type="file" accept="image/png,image/jpeg,image/gif,image/webp" hidden />
+        <div class="composer-buttons">
+          <button id="upload-btn" type="button">Afbeelding</button>
+          <button id="addtodo-btn" type="button">Add to-do</button>
+          <button id="send-btn" type="submit">Send</button>
+        </div>
+      </form>
+    </section>
   </main>
 
-  <form id="composer">
-    <textarea id="input" rows="1" autofocus placeholder="Typ een bericht…"></textarea>
-    <input id="image-input" type="file" accept="image/png,image/jpeg,image/gif,image/webp" hidden />
-    <div class="composer-buttons">
-      <button id="upload-btn" type="button">Afbeelding</button>
-      <button id="addtodo-btn" type="button">Add to-do</button>
-      <button id="send-btn" type="submit">Send</button>
-    </div>
-  </form>
+  <nav id="mobile-nav">
+    <button class="nav-btn" data-view-target="feed" type="button">Feed</button>
+    <button class="nav-btn" data-view-target="todo" type="button">To-do</button>
+    <button class="nav-btn" data-view-target="chat" type="button">Chat</button>
+  </nav>
 
   <div id="lightbox" class="lightbox" hidden>
     <img id="lightbox-img" alt="Afbeelding op volledig formaat" />

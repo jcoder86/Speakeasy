@@ -3,16 +3,14 @@
 const messagesEl = document.getElementById('messages');
 const todosEl = document.getElementById('todos');
 const todoEmptyEl = document.getElementById('todo-empty');
-const chatView = document.getElementById('chat-view');
-const todoView = document.getElementById('todo-view');
 const composer = document.getElementById('composer');
 const input = document.getElementById('input');
-const viewToggle = document.getElementById('view-toggle');
 const addTodoBtn = document.getElementById('addtodo-btn');
 const uploadBtn = document.getElementById('upload-btn');
 const imageInput = document.getElementById('image-input');
 const lightbox = document.getElementById('lightbox');
 const lightboxImg = document.getElementById('lightbox-img');
+const navButtons = document.querySelectorAll('.nav-btn');
 
 // Client-side caches (id -> object).
 const messages = new Map();
@@ -55,21 +53,25 @@ function makeBtn(label, onClick) {
   return b;
 }
 
-/* ---------- View-toggle ---------- */
-let currentView = 'chat';
-
+/* ---------- View-toggle (tabs) ---------- */
+// Drie tabs: feed | todo | chat. Op mobiel is er per data-view één view
+// zichtbaar; op desktop toont de "Dashboard"-knop (target: feed) zowel
+// feed als to-do naast elkaar — de CSS regelt dat via [data-view].
 function setView(view) {
-  currentView = view;
-  const isTodo = view === 'todo';
-  chatView.hidden = isTodo;
-  todoView.hidden = !isTodo;
-  composer.hidden = isTodo;
-  viewToggle.textContent = isTodo ? '← Chat' : 'To-do';
+  document.body.dataset.view = view;
+  for (const btn of navButtons) {
+    const t = btn.dataset.viewTarget;
+    const isDesktopBtn = btn.closest('#desktop-nav') !== null;
+    // Desktop "Dashboard"-knop (target=feed) blijft ook actief bij view=todo.
+    const active = t === view || (isDesktopBtn && t === 'feed' && view === 'todo');
+    btn.classList.toggle('active', active);
+  }
+  if (view === 'chat') input.focus();
 }
 
-viewToggle.addEventListener('click', () => {
-  setView(currentView === 'chat' ? 'todo' : 'chat');
-});
+for (const btn of navButtons) {
+  btn.addEventListener('click', () => setView(btn.dataset.viewTarget));
+}
 
 /* ===================================================================
    CHAT-BERICHTEN
@@ -564,7 +566,13 @@ function connectSSE() {
 loadMessages();
 loadTodos();
 connectSSE();
+setView('feed'); // default: dashboard/feed
 
-// Cursor staat direct in de textarea zodra de app opent, naast het
-// autofocus-attribuut als vangnet voor browsers die dat niet honoreren.
-input.focus();
+/* ---------- PWA service worker ---------- */
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker
+      .register('/sw.js')
+      .catch((err) => console.warn('SW-registratie mislukt:', err));
+  });
+}
