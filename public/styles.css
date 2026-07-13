@@ -91,11 +91,168 @@ body[data-view="chat"] #chat-view {
 }
 
 .feed-placeholder {
-  padding: 40px 20px;
+  padding: 24px 12px;
   text-align: center;
   color: var(--muted);
 }
 .feed-placeholder h2 { margin-bottom: 8px; }
+
+#feed-view { gap: 12px; }
+
+#quotes-status { padding: 6px 4px; }
+
+/* Koersen-strip */
+#quotes-strip {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-bottom: 4px;
+  scroll-snap-type: x mandatory;
+  -webkit-overflow-scrolling: touch;
+}
+#quotes-strip:empty { display: none; }
+#quotes-strip .muted-hint {
+  padding: 12px 4px;
+}
+
+.ticker-card {
+  flex: 0 0 auto;
+  width: 180px;
+  min-height: 96px;
+  padding: 10px 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  scroll-snap-align: start;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.ticker-head {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+}
+.ticker-symbol {
+  font-weight: 700;
+  font-size: 0.95rem;
+}
+.ticker-name {
+  color: var(--muted);
+  font-size: 0.72rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ticker-price {
+  font-size: 1.15rem;
+  font-weight: 700;
+  margin-top: 2px;
+}
+.ticker-delta-big {
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+.ticker-deltas {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  margin-top: 4px;
+  font-size: 0.7rem;
+}
+.ticker-delta-small .lbl {
+  color: var(--muted);
+  font-weight: 500;
+  margin-right: 2px;
+}
+.ticker-error,
+.ticker-loading {
+  color: var(--muted);
+  font-size: 0.8rem;
+  padding: 4px 0;
+}
+
+.up { color: #16a34a; }
+.down { color: #dc2626; }
+.flat { color: var(--muted); }
+
+/* Watchlist beheren (details) */
+#watchlist-manager {
+  padding-top: 4px;
+}
+#watchlist-manager summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 0.85rem;
+  padding: 4px 0;
+  list-style: none;
+}
+#watchlist-manager summary::-webkit-details-marker { display: none; }
+#watchlist-manager summary::before { content: "▸ "; margin-right: 2px; }
+#watchlist-manager[open] summary::before { content: "▾ "; }
+
+#watchlist-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px 0;
+}
+.watchlist-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.watchlist-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 0.9rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.watchlist-row .icon-btn {
+  min-height: 32px;
+  padding: 0 8px;
+  font-size: 0.75rem;
+}
+
+#watchlist-add-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 4px;
+}
+#watchlist-ticker {
+  flex: 0 1 110px;
+  min-height: 40px;
+  padding: 0 10px;
+  font: inherit;
+  text-transform: uppercase;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+}
+#watchlist-name {
+  flex: 1 1 140px;
+  min-height: 40px;
+  padding: 0 10px;
+  font: inherit;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+}
+#watchlist-add-form button {
+  flex: 0 0 auto;
+  min-height: 40px;
+  padding: 0 12px;
+  font-size: 0.85rem;
+}
 
 /* Chat: berichten scrollen, composer blijft onderin */
 #chat-view { overflow: hidden; }

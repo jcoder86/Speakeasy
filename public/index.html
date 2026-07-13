@@ -22,9 +22,20 @@
 
   <main>
     <section id="feed-view" class="view">
-      <div class="feed-placeholder">
-        <h2>Feed</h2>
-        <p>Koersen en nieuws komen in fase 2 en 3.</p>
+      <div id="quotes-status" class="muted-hint" hidden></div>
+      <div id="quotes-strip"></div>
+      <details id="watchlist-manager">
+        <summary>Watchlist beheren</summary>
+        <div id="watchlist-list"></div>
+        <form id="watchlist-add-form">
+          <input id="watchlist-ticker" type="text" placeholder="Ticker (bv AAPL)" maxlength="12" autocomplete="off" />
+          <input id="watchlist-name" type="text" placeholder="Naam (optioneel)" maxlength="60" autocomplete="off" />
+          <button type="submit">Toevoegen</button>
+        </form>
+      </details>
+
+      <div id="feed-news-placeholder" class="feed-placeholder">
+        <p>Nieuws komt in fase 3.</p>
       </div>
     </section>
 

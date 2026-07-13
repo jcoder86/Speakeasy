@@ -54,6 +54,23 @@ db.exec(`
   );
 
   CREATE INDEX IF NOT EXISTS idx_todo_labels_label ON todo_labels(label_id);
+
+  CREATE TABLE IF NOT EXISTS watchlist (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    ticker       TEXT    NOT NULL UNIQUE,
+    display_name TEXT,
+    added_at     INTEGER NOT NULL
+  );
+
+  -- Dagelijkse close-prijzen (accumuleert vanuit /quote-calls) voor
+  -- deltas 5d/21d/63d/YTD. Datum in YYYY-MM-DD (UTC).
+  CREATE TABLE IF NOT EXISTS prices (
+    ticker TEXT NOT NULL,
+    date   TEXT NOT NULL,
+    close  REAL NOT NULL,
+    PRIMARY KEY (ticker, date)
+  );
+  CREATE INDEX IF NOT EXISTS idx_prices_ticker_date ON prices(ticker, date DESC);
 `);
 
 module.exports = { db, DATA_DIR, UPLOADS_DIR };

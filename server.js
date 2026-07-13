@@ -345,6 +345,147 @@ app.delete('/api/todos/:id', (req, res) => {
   res.json({ ok: true });
 });
 
+/* ---------- Watchlist ---------- */
+app.get('/api/watchlist', (req, res) => {
+  res.json(db.prepare('SELECT * FROM watchlist ORDER BY added_at ASC').all());
+});
+
+app.post('/api/watchlist', (req, res) => {
+  const raw = typeof req.body.ticker === 'string' ? req.body.ticker.trim().toUpperCase() : '';
+  const displayName = typeof req.body.display_name === 'string'
+    ? req.body.display_name.trim() || null
+    : null;
+  if (!raw) return res.status(400).json({ error: 'Ticker mag niet leeg zijn.' });
+  if (!/^[A-Z0-9.\-]{1,12}$/.test(raw)) {
+    return res.status(400).json({ error: 'Ongeldige ticker (max 12 tekens, letters/cijfers/./-).' });
+  }
+  try {
+    const info = db
+      .prepare('INSERT INTO watchlist (ticker, display_name, added_at) VALUES (?, ?, ?)')
+      .run(raw, displayName, Date.now());
+    const item = db.prepare('SELECT * FROM watchlist WHERE id = ?').get(Number(info.lastInsertRowid));
+    broadcast('watchlist:new', item);
+    res.status(201).json(item);
+  } catch (err) {
+    if (err && String(err.message).includes('UNIQUE')) {
+      return res.status(409).json({ error: 'Deze ticker staat al in je watchlist.' });
+    }
+    throw err;
+  }
+});
+
+app.delete('/api/watchlist/:id', (req, res) => {
+  const id = Number(req.params.id);
+  const item = db.prepare('SELECT * FROM watchlist WHERE id = ?').get(id);
+  if (!item) return res.status(404).json({ error: 'Ticker niet gevonden.' });
+  db.prepare('DELETE FROM watchlist WHERE id = ?').run(id);
+  // prices-rijen bewust laten staan: als de user 'em later weer toevoegt,
+  // is de historie meteen bruikbaar voor deltas.
+  broadcast('watchlist:delete', { id });
+  res.json({ ok: true });
+});
+
+/* ---------- Koersen (Finnhub proxy) ---------- */
+// In-memory cache: ticker -> {data, ts}. TTL 60s (Finnhub free-tier vriendelijk).
+const QUOTE_CACHE = new Map();
+const QUOTE_TTL_MS = 60 * 1000;
+
+async function fetchQuote(ticker, apiKey) {
+  const cached = QUOTE_CACHE.get(ticker);
+  if (cached && Date.now() - cached.ts < QUOTE_TTL_MS) return cached.data;
+  const url = `https://finnhub.io/api/v1/quote?symbol=${encodeURIComponent(ticker)}&token=${encodeURIComponent(apiKey)}`;
+  try {
+    const r = await fetch(url);
+    if (!r.ok) return { error: `Finnhub HTTP ${r.status}` };
+    const data = await r.json();
+    // Finnhub geeft {c,d,dp,h,l,o,pc,t}. Bij onbekende ticker: c=0.
+    if (typeof data.c !== 'number' || data.c === 0) {
+      return { error: 'Ticker niet gevonden bij Finnhub.' };
+    }
+    QUOTE_CACHE.set(ticker, { data, ts: Date.now() });
+    return data;
+  } catch (err) {
+    return { error: 'Netwerkfout richting Finnhub.' };
+  }
+}
+
+// Datum YYYY-MM-DD in Europe/Amsterdam (dagclose logica per beurs varieert;
+// voor UI-doelen is één stabiele timezone genoeg — accumulatief).
+function todayDateStr() {
+  const now = new Date();
+  const tz = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Europe/Amsterdam',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+  }).format(now);
+  return tz; // YYYY-MM-DD
+}
+
+function daysAgoStr(days) {
+  const d = new Date();
+  d.setUTCDate(d.getUTCDate() - days);
+  return d.toISOString().slice(0, 10);
+}
+
+function deltaVsHistory(ticker, current, days) {
+  const cutoff = daysAgoStr(days);
+  const row = db
+    .prepare('SELECT close FROM prices WHERE ticker = ? AND date <= ? ORDER BY date DESC LIMIT 1')
+    .get(ticker, cutoff);
+  if (!row) return null;
+  return (current - row.close) / row.close;
+}
+
+function deltaYTD(ticker, current) {
+  const jan1 = `${new Date().getUTCFullYear()}-01-01`;
+  const row = db
+    .prepare('SELECT close FROM prices WHERE ticker = ? AND date >= ? ORDER BY date ASC LIMIT 1')
+    .get(ticker, jan1);
+  if (!row) return null;
+  return (current - row.close) / row.close;
+}
+
+const upsertPrice = db.prepare(
+  `INSERT INTO prices (ticker, date, close) VALUES (?, ?, ?)
+   ON CONFLICT(ticker, date) DO UPDATE SET close = excluded.close`,
+);
+
+app.get('/api/quotes', async (req, res) => {
+  const apiKey = process.env.FINNHUB_API_KEY;
+  const list = db.prepare('SELECT * FROM watchlist ORDER BY added_at ASC').all();
+  if (!apiKey) {
+    return res.status(503).json({
+      error: 'FINNHUB_API_KEY niet ingesteld op de server.',
+      watchlist: list,
+      quotes: [],
+    });
+  }
+  const today = todayDateStr();
+  const quotes = [];
+  for (const w of list) {
+    const q = await fetchQuote(w.ticker, apiKey);
+    if (q && q.error) {
+      quotes.push({ ticker: w.ticker, display_name: w.display_name, error: q.error });
+      continue;
+    }
+    // Dagclose upserten (accumuleert historie voor multi-day deltas).
+    upsertPrice.run(w.ticker, today, q.c);
+    quotes.push({
+      ticker: w.ticker,
+      display_name: w.display_name,
+      price: q.c,
+      prev_close: typeof q.pc === 'number' ? q.pc : null,
+      deltas: {
+        d1: typeof q.pc === 'number' && q.pc ? (q.c - q.pc) / q.pc : null,
+        d5: deltaVsHistory(w.ticker, q.c, 5),
+        d21: deltaVsHistory(w.ticker, q.c, 21),
+        d63: deltaVsHistory(w.ticker, q.c, 63),
+        ytd: deltaYTD(w.ticker, q.c),
+      },
+    });
+  }
+  res.json({ generated_at: Date.now(), quotes });
+});
+
 /* ---------- Start ---------- */
 // Poort: env PORT, anders 1e CLI-argument, anders 3000.
 const PORT = process.env.PORT || process.argv[2] || 3000;

@@ -14,6 +14,12 @@ const labelMgmtListEl = document.getElementById('label-mgmt-list');
 const newLabelForm = document.getElementById('new-label-form');
 const newLabelName = document.getElementById('new-label-name');
 const newLabelColor = document.getElementById('new-label-color');
+const quotesStatusEl = document.getElementById('quotes-status');
+const quotesStripEl = document.getElementById('quotes-strip');
+const watchlistListEl = document.getElementById('watchlist-list');
+const watchlistAddForm = document.getElementById('watchlist-add-form');
+const watchlistTickerInput = document.getElementById('watchlist-ticker');
+const watchlistNameInput = document.getElementById('watchlist-name');
 const composer = document.getElementById('composer');
 const input = document.getElementById('input');
 const addTodoBtn = document.getElementById('addtodo-btn');
@@ -325,6 +331,200 @@ async function copyImage(src) {
     await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
   } catch (err) {
     alert('Kopiëren naar klembord mislukt: ' + (err && err.message ? err.message : err));
+  }
+}
+
+/* ===================================================================
+   FEED — WATCHLIST + KOERSEN
+   =================================================================== */
+const watchlist = new Map(); // id -> {id, ticker, display_name}
+let quotesCache = { ts: 0, quotes: [] };
+
+function pct(v) {
+  if (v === null || v === undefined || Number.isNaN(v)) return '—';
+  const s = (v * 100).toFixed(v > -0.001 && v < 0.001 ? 2 : 1);
+  return (v >= 0 ? '+' : '') + s + '%';
+}
+
+function priceStr(v) {
+  if (v === null || v === undefined || Number.isNaN(v)) return '—';
+  return v.toLocaleString('nl-NL', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function trendClass(v) {
+  if (v === null || v === undefined || Number.isNaN(v)) return 'flat';
+  return v > 0 ? 'up' : v < 0 ? 'down' : 'flat';
+}
+
+function renderQuotesStrip() {
+  quotesStripEl.innerHTML = '';
+  const quotesById = new Map(quotesCache.quotes.map((q) => [q.ticker, q]));
+  if (watchlist.size === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'muted-hint';
+    empty.textContent = 'Voeg een ticker toe via "Watchlist beheren" hieronder.';
+    quotesStripEl.appendChild(empty);
+    return;
+  }
+  for (const item of watchlist.values()) {
+    const q = quotesById.get(item.ticker);
+    const card = document.createElement('div');
+    card.className = 'ticker-card';
+    card.dataset.ticker = item.ticker;
+
+    const head = document.createElement('div');
+    head.className = 'ticker-head';
+    const t = document.createElement('span');
+    t.className = 'ticker-symbol';
+    t.textContent = item.ticker;
+    head.appendChild(t);
+    if (item.display_name) {
+      const n = document.createElement('span');
+      n.className = 'ticker-name';
+      n.textContent = item.display_name;
+      head.appendChild(n);
+    }
+    card.appendChild(head);
+
+    if (q && q.error) {
+      const err = document.createElement('div');
+      err.className = 'ticker-error';
+      err.textContent = q.error;
+      card.appendChild(err);
+    } else if (q) {
+      const price = document.createElement('div');
+      price.className = 'ticker-price';
+      price.textContent = priceStr(q.price);
+      card.appendChild(price);
+
+      const d1 = document.createElement('div');
+      d1.className = 'ticker-delta-big ' + trendClass(q.deltas.d1);
+      d1.textContent = pct(q.deltas.d1);
+      card.appendChild(d1);
+
+      const rest = document.createElement('div');
+      rest.className = 'ticker-deltas';
+      const smalls = [
+        ['5d', q.deltas.d5],
+        ['21d', q.deltas.d21],
+        ['63d', q.deltas.d63],
+        ['YTD', q.deltas.ytd],
+      ];
+      for (const [label, val] of smalls) {
+        const s = document.createElement('span');
+        s.className = 'ticker-delta-small ' + trendClass(val);
+        s.innerHTML = `<span class="lbl">${label}</span> ${pct(val)}`;
+        rest.appendChild(s);
+      }
+      card.appendChild(rest);
+    } else {
+      const loading = document.createElement('div');
+      loading.className = 'ticker-loading';
+      loading.textContent = '…';
+      card.appendChild(loading);
+    }
+    quotesStripEl.appendChild(card);
+  }
+}
+
+function renderWatchlistManager() {
+  watchlistListEl.innerHTML = '';
+  if (watchlist.size === 0) {
+    const p = document.createElement('p');
+    p.className = 'muted-hint';
+    p.textContent = 'Nog geen tickers.';
+    watchlistListEl.appendChild(p);
+    return;
+  }
+  for (const item of watchlist.values()) {
+    const row = document.createElement('div');
+    row.className = 'watchlist-row';
+    const label = document.createElement('span');
+    label.className = 'watchlist-label';
+    label.textContent = item.display_name
+      ? `${item.ticker} — ${item.display_name}`
+      : item.ticker;
+    row.appendChild(label);
+    const del = document.createElement('button');
+    del.type = 'button';
+    del.className = 'icon-btn';
+    del.textContent = 'Verwijder';
+    del.addEventListener('click', () => removeWatchlistItem(item.id));
+    row.appendChild(del);
+    watchlistListEl.appendChild(row);
+  }
+}
+
+async function loadWatchlist() {
+  try {
+    const res = await fetch('/api/watchlist');
+    const rows = await res.json();
+    watchlist.clear();
+    for (const r of rows) watchlist.set(r.id, r);
+    renderWatchlistManager();
+    renderQuotesStrip();
+  } catch {
+    /* stille fallback */
+  }
+}
+
+async function loadQuotes() {
+  try {
+    const res = await fetch('/api/quotes');
+    const data = await res.json();
+    if (res.status === 503) {
+      quotesStatusEl.hidden = false;
+      quotesStatusEl.textContent = data.error || 'Koersen niet beschikbaar.';
+      // toch watchlist synchroniseren wanneer de key ontbreekt.
+      if (Array.isArray(data.watchlist)) {
+        watchlist.clear();
+        for (const r of data.watchlist) watchlist.set(r.id, r);
+        renderWatchlistManager();
+      }
+      quotesCache = { ts: Date.now(), quotes: [] };
+      renderQuotesStrip();
+      return;
+    }
+    quotesStatusEl.hidden = true;
+    quotesCache = { ts: Date.now(), quotes: data.quotes || [] };
+    renderQuotesStrip();
+  } catch {
+    quotesStatusEl.hidden = false;
+    quotesStatusEl.textContent = 'Kon koersen niet ophalen.';
+  }
+}
+
+watchlistAddForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const ticker = watchlistTickerInput.value.trim();
+  const displayName = watchlistNameInput.value.trim();
+  if (!ticker) return;
+  try {
+    const res = await fetch('/api/watchlist', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ticker, display_name: displayName || undefined }),
+    });
+    if (!res.ok) {
+      alert(await apiError(res));
+      return;
+    }
+    watchlistTickerInput.value = '';
+    watchlistNameInput.value = '';
+    // SSE broadcast + zelf laadt via loadQuotes hieronder.
+    await loadQuotes();
+  } catch {
+    alert('Toevoegen mislukt: geen verbinding.');
+  }
+});
+
+async function removeWatchlistItem(id) {
+  try {
+    const res = await fetch(`/api/watchlist/${id}`, { method: 'DELETE' });
+    if (!res.ok) alert(await apiError(res));
+    // SSE brengt watchlist:delete.
+  } catch {
+    alert('Verwijderen mislukt: geen verbinding.');
   }
 }
 
@@ -785,14 +985,31 @@ function connectSSE() {
     renderFilterChips();
     renderLabelManager();
   });
+  source.addEventListener('watchlist:new', (e) => {
+    const item = JSON.parse(e.data);
+    watchlist.set(item.id, item);
+    renderWatchlistManager();
+    renderQuotesStrip();
+    loadQuotes();
+  });
+  source.addEventListener('watchlist:delete', (e) => {
+    const { id } = JSON.parse(e.data);
+    watchlist.delete(id);
+    renderWatchlistManager();
+    renderQuotesStrip();
+  });
 }
 
 /* ---------- Init ---------- */
 loadMessages();
 loadLabels();
 loadTodos();
+loadWatchlist().then(loadQuotes);
 connectSSE();
 setView('feed'); // default: dashboard/feed
+
+// Koersen elke 60s ophalen (server-cache is ook 60s → geen extra Finnhub-calls).
+setInterval(loadQuotes, 60 * 1000);
 
 /* ---------- PWA service worker ---------- */
 if ('serviceWorker' in navigator) {
