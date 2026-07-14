@@ -313,6 +313,43 @@ function snapshot() {
   return { generated_at: lastRun || Date.now(), quotes };
 }
 
+/* Het snapshot leeft in geheugen en is dus weg na een herstart — en een deploy
+   is een herstart. Zonder dit stond de tabel na elke deploy ~2,5 minuut op
+   "laden…" (Twelve Data doet 8 tickers per minuut). De prices-tabel bevat de
+   historie al, dus daar bouwen we bij het opstarten meteen een snapshot uit.
+   De live ronde overschrijft het zodra hij binnen is. */
+function hydrateFromDb() {
+  const list = db.prepare('SELECT ticker FROM watchlist').all();
+  const q = db.prepare(
+    'SELECT date, close FROM prices WHERE ticker = ? ORDER BY date DESC LIMIT 200',
+  );
+  let n = 0;
+  for (const w of list) {
+    const bars = q.all(w.ticker);
+    if (bars.length < 2) continue;
+    const { src, sym } = route(w.ticker);
+    // Valuta staat niet in de prices-tabel; leiden we af uit de bron.
+    const currency = src === 'td' ? 'USD' : src === 'moex' ? 'RUB' : guessCurrency(sym);
+    SNAPSHOT.set(w.ticker, {
+      ticker: w.ticker,
+      price: bars[0].close,
+      prev_close: bars[1].close,
+      currency,
+      deltas: {
+        d1: deltaBars(bars, 1),
+        d5: deltaBars(bars, 5),
+        d21: deltaBars(bars, 21),
+        d63: deltaBars(bars, 63),
+        ytd: deltaYTD(bars),
+      },
+      error: null,
+      ts: Date.now(),
+    });
+    n++;
+  }
+  if (n) console.log(`[quotes] ${n} tickers uit de database geladen (tot de live ronde binnen is)`);
+}
+
 function start(broadcast) {
   const keys = [];
   if (!TD_KEY()) keys.push('TWELVEDATA_API_KEY');
@@ -320,6 +357,7 @@ function start(broadcast) {
   if (keys.length) {
     console.warn(`[quotes] ontbrekende env-vars: ${keys.join(', ')} — die tickers falen.`);
   }
+  hydrateFromDb();
   refreshAll(broadcast).catch((e) => console.error('[quotes] eerste refresh faalde:', e.message));
   setInterval(() => {
     refreshAll(broadcast).catch((e) => console.error('[quotes] refresh faalde:', e.message));

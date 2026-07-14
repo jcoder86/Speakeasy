@@ -419,21 +419,41 @@ function renderQuotesStrip() {
   table.appendChild(thead);
 
   const tbody = document.createElement('tbody');
-  let currentGroup = null;
 
+  /* Echt groeperen, niet "kop printen zodra de beurs wisselt": de watchlist
+     staat op volgorde van toevoegen, dus US-tickers staan verspreid en je kreeg
+     twee keer een kop "Verenigde Staten". Binnen een groep blijft de eigen
+     volgorde staan. */
+  const GROUP_ORDER = ['Verenigde Staten', 'Amsterdam', 'Warschau', 'Moskou', 'Europa'];
+  const buckets = new Map();
   for (const item of watchlist.values()) {
-    const group = exchangeOf(item.ticker);
-    if (group !== currentGroup) {
-      currentGroup = group;
+    const g = exchangeOf(item.ticker);
+    if (!buckets.has(g)) buckets.set(g, []);
+    buckets.get(g).push(item);
+  }
+  const ordered = [
+    ...GROUP_ORDER.filter((g) => buckets.has(g)),
+    ...[...buckets.keys()].filter((g) => !GROUP_ORDER.includes(g)),
+  ];
+
+  const items = [];
+  for (const g of ordered) {
+    items.push({ group: g });
+    for (const item of buckets.get(g)) items.push({ item });
+  }
+
+  for (const entry of items) {
+    if (entry.group) {
       const gr = document.createElement('tr');
       gr.className = 'q-group';
       const gtd = document.createElement('td');
       gtd.colSpan = 7;
-      gtd.textContent = group;
+      gtd.textContent = entry.group;
       gr.appendChild(gtd);
       tbody.appendChild(gr);
+      continue;
     }
-
+    const item = entry.item;
     const q = quotesById.get(item.ticker);
     const row = document.createElement('tr');
     row.dataset.ticker = item.ticker;
