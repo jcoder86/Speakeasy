@@ -6,6 +6,7 @@ const crypto = require('node:crypto');
 const express = require('express');
 const multer = require('multer');
 const { db, UPLOADS_DIR } = require('./db');
+const quotes = require('./quotes');
 
 const app = express();
 app.use(express.json());
@@ -366,6 +367,8 @@ app.post('/api/watchlist', (req, res) => {
     const item = db.prepare('SELECT * FROM watchlist WHERE id = ?').get(Number(info.lastInsertRowid));
     broadcast('watchlist:new', item);
     res.status(201).json(item);
+    // Koers meteen ophalen, zodat de kaart niet tot de volgende ronde leeg blijft.
+    quotes.refreshTicker(raw, broadcast).catch(() => {});
   } catch (err) {
     if (err && String(err.message).includes('UNIQUE')) {
       return res.status(409).json({ error: 'Deze ticker staat al in je watchlist.' });
@@ -385,69 +388,12 @@ app.delete('/api/watchlist/:id', (req, res) => {
   res.json({ ok: true });
 });
 
-/* ---------- Koersen (Finnhub proxy) ---------- */
-// In-memory cache: ticker -> {data, ts}. TTL 60s (Finnhub free-tier vriendelijk).
-const QUOTE_CACHE = new Map();
-const QUOTE_TTL_MS = 60 * 1000;
-
-async function fetchQuote(ticker, apiKey) {
-  const cached = QUOTE_CACHE.get(ticker);
-  if (cached && Date.now() - cached.ts < QUOTE_TTL_MS) return cached.data;
-  const url = `https://finnhub.io/api/v1/quote?symbol=${encodeURIComponent(ticker)}&token=${encodeURIComponent(apiKey)}`;
-  try {
-    const r = await fetch(url);
-    if (!r.ok) return { error: `Finnhub HTTP ${r.status}` };
-    const data = await r.json();
-    // Finnhub geeft {c,d,dp,h,l,o,pc,t}. Bij onbekende ticker: c=0.
-    if (typeof data.c !== 'number' || data.c === 0) {
-      return { error: 'Ticker niet gevonden bij Finnhub.' };
-    }
-    QUOTE_CACHE.set(ticker, { data, ts: Date.now() });
-    return data;
-  } catch (err) {
-    return { error: 'Netwerkfout richting Finnhub.' };
-  }
-}
-
-// Datum YYYY-MM-DD in Europe/Amsterdam (dagclose logica per beurs varieert;
-// voor UI-doelen is één stabiele timezone genoeg — accumulatief).
-function todayDateStr() {
-  const now = new Date();
-  const tz = new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Europe/Amsterdam',
-    year: 'numeric', month: '2-digit', day: '2-digit',
-  }).format(now);
-  return tz; // YYYY-MM-DD
-}
-
-function daysAgoStr(days) {
-  const d = new Date();
-  d.setUTCDate(d.getUTCDate() - days);
-  return d.toISOString().slice(0, 10);
-}
-
-function deltaVsHistory(ticker, current, days) {
-  const cutoff = daysAgoStr(days);
-  const row = db
-    .prepare('SELECT close FROM prices WHERE ticker = ? AND date <= ? ORDER BY date DESC LIMIT 1')
-    .get(ticker, cutoff);
-  if (!row) return null;
-  return (current - row.close) / row.close;
-}
-
-function deltaYTD(ticker, current) {
-  const jan1 = `${new Date().getUTCFullYear()}-01-01`;
-  const row = db
-    .prepare('SELECT close FROM prices WHERE ticker = ? AND date >= ? ORDER BY date ASC LIMIT 1')
-    .get(ticker, jan1);
-  if (!row) return null;
-  return (current - row.close) / row.close;
-}
-
-const upsertPrice = db.prepare(
-  `INSERT INTO prices (ticker, date, close) VALUES (?, ?, ?)
-   ON CONFLICT(ticker, date) DO UPDATE SET close = excluded.close`,
-);
+/* ---------- Koersen: zie quotes.js (Twelve Data / EODHD / MOEX) ----------
+ * Finnhub is hier vervangen: het gratis plan heeft geen historische candles
+ * (waardoor 5d/21d/63d/YTD zich maandenlang moesten opsparen) en is US-only,
+ * terwijl de watchlist grotendeels Nederlands is. Finnhub blijft wél in
+ * gebruik voor watchlist-nieuws hieronder — daar is hij goed in.
+ * quotes.js ververst op een timer; /api/quotes serveert dus direct. */
 
 /* ---------- Nieuws: watchlist (Finnhub company-news) ---------- */
 // Cache-key = ticker; server-side cache 15 min zoals spec.
@@ -542,41 +488,15 @@ app.get('/api/news/feed', async (req, res) => {
   }
 });
 
-app.get('/api/quotes', async (req, res) => {
-  const apiKey = process.env.FINNHUB_API_KEY;
-  const list = db.prepare('SELECT * FROM watchlist ORDER BY added_at ASC').all();
-  if (!apiKey) {
-    return res.status(503).json({
-      error: 'FINNHUB_API_KEY niet ingesteld op de server.',
-      watchlist: list,
-      quotes: [],
-    });
-  }
-  const today = todayDateStr();
-  const quotes = [];
-  for (const w of list) {
-    const q = await fetchQuote(w.ticker, apiKey);
-    if (q && q.error) {
-      quotes.push({ ticker: w.ticker, display_name: w.display_name, error: q.error });
-      continue;
-    }
-    // Dagclose upserten (accumuleert historie voor multi-day deltas).
-    upsertPrice.run(w.ticker, today, q.c);
-    quotes.push({
-      ticker: w.ticker,
-      display_name: w.display_name,
-      price: q.c,
-      prev_close: typeof q.pc === 'number' ? q.pc : null,
-      deltas: {
-        d1: typeof q.pc === 'number' && q.pc ? (q.c - q.pc) / q.pc : null,
-        d5: deltaVsHistory(w.ticker, q.c, 5),
-        d21: deltaVsHistory(w.ticker, q.c, 21),
-        d63: deltaVsHistory(w.ticker, q.c, 63),
-        ytd: deltaYTD(w.ticker, q.c),
-      },
-    });
-  }
-  res.json({ generated_at: Date.now(), quotes });
+// Snapshot uit quotes.js — altijd direct, nooit wachten op externe API's.
+app.get('/api/quotes', (req, res) => {
+  res.json(quotes.snapshot());
+});
+
+// Handmatig verversen (knop in de UI kan hier later op aanhaken).
+app.post('/api/quotes/refresh', async (req, res) => {
+  await quotes.refreshAll(broadcast);
+  res.json(quotes.snapshot());
 });
 
 /* ---------- Start ---------- */
@@ -584,4 +504,6 @@ app.get('/api/quotes', async (req, res) => {
 const PORT = process.env.PORT || process.argv[2] || 3000;
 app.listen(PORT, () => {
   console.log(`Speakeasy draait op http://localhost:${PORT}`);
+  // Koersen ophalen bij start en daarna elke 15 min; broadcast via SSE.
+  quotes.start(broadcast);
 });

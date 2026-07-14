@@ -350,9 +350,14 @@ function pct(v) {
   return (v >= 0 ? '+' : '') + s + '%';
 }
 
-function priceStr(v) {
+// De watchlist bestrijkt meerdere beurzen (US, Amsterdam, Warschau, Moskou),
+// dus zonder valutateken zou $9 naast €1.555 staan zonder dat je het ziet.
+const CURRENCY_SIGN = { USD: '$', EUR: '€', PLN: 'zł ', GBP: '£', CHF: 'CHF ', RUB: '₽ ' };
+
+function priceStr(v, currency) {
   if (v === null || v === undefined || Number.isNaN(v)) return '—';
-  return v.toLocaleString('nl-NL', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const sign = CURRENCY_SIGN[currency] || '';
+  return sign + v.toLocaleString('nl-NL', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 function trendClass(v) {
@@ -398,7 +403,7 @@ function renderQuotesStrip() {
     } else if (q) {
       const price = document.createElement('div');
       price.className = 'ticker-price';
-      price.textContent = priceStr(q.price);
+      price.textContent = priceStr(q.price, q.currency);
       card.appendChild(price);
 
       const d1 = document.createElement('div');
@@ -1091,6 +1096,9 @@ function connectSSE() {
     renderFilterChips();
     renderLabelManager();
   });
+  // Server ververst koersen op een timer; dan meteen de strip bijwerken.
+  source.addEventListener('quotes:update', () => { loadQuotes(); });
+
   source.addEventListener('watchlist:new', (e) => {
     const item = JSON.parse(e.data);
     watchlist.set(item.id, item);
