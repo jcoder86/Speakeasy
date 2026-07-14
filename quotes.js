@@ -70,10 +70,33 @@ function route(ticker) {
   return { src: 'td', sym: t };
 }
 
+/* ---------- Twelve Data credit-poort ----------
+ * Het gratis plan staat 8 credits per minuut toe. Eerder telde ik credits per
+ * refresh-ronde, maar dat weet niets van wat er vlak daarvóór is verbruikt —
+ * bij een herstart binnen dezelfde minuut sneuvelde het hele eerste blok.
+ * Deze poort houdt een voortschrijdend venster van 60s bij en geldt voor élke
+ * Twelve Data-call (koersen én de wisselkoers). */
+const tdCalls = [];
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+async function tdGate() {
+  for (;;) {
+    const now = Date.now();
+    while (tdCalls.length && now - tdCalls[0] > 60000) tdCalls.shift();
+    if (tdCalls.length < TD_PER_MIN) {
+      // check + push is synchroon, dus twee wachters kunnen niet dezelfde slot pakken
+      tdCalls.push(now);
+      return;
+    }
+    await sleep(60000 - (now - tdCalls[0]) + 250);
+  }
+}
+
 /* ---------- bronnen: leveren allemaal bars nieuw->oud ---------- */
 async function seriesTwelveData(sym) {
   const key = TD_KEY();
   if (!key) throw new Error('TWELVEDATA_API_KEY niet ingesteld');
+  await tdGate();
   const p = new URLSearchParams({
     symbol: sym, interval: '1day', outputsize: '400', order: 'desc', apikey: key,
   });
@@ -142,6 +165,7 @@ async function eurRub() {
   const key = TD_KEY();
   if (!key) return null;
   try {
+    await tdGate();
     const p = new URLSearchParams({
       symbol: 'EUR/RUB', interval: '1day', outputsize: '1', order: 'desc', apikey: key,
     });
@@ -217,28 +241,20 @@ async function fetchTicker(ticker) {
 }
 
 /* ---------- scheduler ---------- */
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-
 async function refreshAll(broadcast) {
   if (running) return;
   running = true;
   try {
     const list = db.prepare('SELECT ticker FROM watchlist ORDER BY added_at ASC').all();
-    const tds = [];
-    const others = [];
-    for (const w of list) (route(w.ticker).src === 'td' ? tds : others).push(w.ticker);
 
-    // EODHD + MOEX kennen geen krappe per-minuut-limiet: meteen, parallel.
-    await Promise.all(others.map((t) => runOne(t)));
-
-    // Twelve Data: 8 credits/minuut. In blokken, met een pauze ertussen.
-    for (let i = 0; i < tds.length; i += TD_PER_MIN) {
-      const t0 = Date.now();
-      await Promise.all(tds.slice(i, i + TD_PER_MIN).map((t) => runOne(t)));
-      if (i + TD_PER_MIN < tds.length) {
-        await sleep(Math.max(0, 62000 - (Date.now() - t0)));
-      }
-    }
+    /* Alles tegelijk starten: de credit-poort hierboven doseert de Twelve
+       Data-calls vanzelf, en EODHD/MOEX hebben geen krappe minuutlimiet.
+       Zodra een ticker binnen is, ziet de UI 'm — hij hoeft niet op de
+       traagste te wachten. */
+    await Promise.all(list.map(async (w) => {
+      await runOne(w.ticker);
+      if (broadcast) broadcast('quotes:update', { generated_at: Date.now() });
+    }));
 
     lastRun = Date.now();
     if (broadcast) broadcast('quotes:update', { generated_at: lastRun });
@@ -247,22 +263,34 @@ async function refreshAll(broadcast) {
   }
 }
 
-async function runOne(ticker) {
+const RATE_LIMIT_RE = /credit|rate limit|too many|429/i;
+
+async function runOne(ticker, attempt = 0) {
   try {
     SNAPSHOT.set(ticker, await fetchTicker(ticker));
   } catch (err) {
+    const msg = String(err.message || err);
+
+    /* Een rate-limit is tijdelijk. Zonder retry bleef zo'n ticker 15 minuten
+       op "fout" staan tot de volgende ronde — dat is geen fout, dat is drukte. */
+    if (RATE_LIMIT_RE.test(msg) && attempt < 2) {
+      await sleep(62000);
+      return runOne(ticker, attempt + 1);
+    }
+
     const prev = SNAPSHOT.get(ticker);
     SNAPSHOT.set(ticker, {
       ticker,
-      // laatst bekende koers blijven tonen i.p.v. de kaart leeg te gooien
+      // laatst bekende koers blijven tonen i.p.v. de regel leeg te gooien
       price: prev?.price ?? null,
       prev_close: prev?.prev_close ?? null,
       currency: prev?.currency ?? null,
       deltas: prev?.deltas ?? { d1: null, d5: null, d21: null, d63: null, ytd: null },
-      error: String(err.message || err).slice(0, 90),
+      error: msg.slice(0, 90),
       ts: Date.now(),
     });
   }
+  return undefined;
 }
 
 /* Losse ticker meteen ophalen (bij toevoegen aan de watchlist). */
@@ -276,7 +304,8 @@ function snapshot() {
   const quotes = list.map((w) => {
     const s = SNAPSHOT.get(w.ticker);
     if (!s) {
-      return { ticker: w.ticker, display_name: w.display_name, price: null, error: 'laden…',
+      // Nog niet opgehaald is géén fout: error blijft null, de UI toont "laden…".
+      return { ticker: w.ticker, display_name: w.display_name, price: null, error: null,
         deltas: { d1: null, d5: null, d21: null, d63: null, ytd: null } };
     }
     return { ...s, display_name: w.display_name };

@@ -101,77 +101,72 @@ body[data-view="chat"] #chat-view {
 
 #quotes-status { padding: 6px 4px; }
 
-/* Koersen-strip */
-#quotes-strip {
-  display: flex;
-  gap: 8px;
-  overflow-x: auto;
-  overflow-y: hidden;
-  padding-bottom: 4px;
-  scroll-snap-type: x mandatory;
-  -webkit-overflow-scrolling: touch;
-}
+/* Koersen — compacte tabel.
+   Was een rij horizontaal scrollende kaarten van 180px; met een watchlist van
+   20+ regels betekende dat eindeloos vegen. Een dichte tabel toont alles in
+   één blik en schaalt wél mee. */
 #quotes-strip:empty { display: none; }
-#quotes-strip .muted-hint {
-  padding: 12px 4px;
-}
+#quotes-strip .muted-hint { padding: 12px 4px; }
 
-.ticker-card {
-  flex: 0 0 auto;
-  width: 180px;
-  min-height: 96px;
-  padding: 10px 12px;
+.quotes-table {
+  width: 100%;
+  border-collapse: collapse;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 12px;
-  scroll-snap-align: start;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
+  overflow: hidden;
+  font-variant-numeric: tabular-nums;
 }
-.ticker-head {
-  display: flex;
-  align-items: baseline;
-  gap: 6px;
-  min-width: 0;
-}
-.ticker-symbol {
-  font-weight: 700;
-  font-size: 0.95rem;
-}
-.ticker-name {
+.quotes-table th {
+  text-align: right;
+  font-size: 0.62rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
   color: var(--muted);
-  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+.quotes-table th:first-child { text-align: left; }
+
+.quotes-table td {
+  padding: 5px 10px;
+  text-align: right;
+  white-space: nowrap;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.82rem;
+}
+.quotes-table tr:last-child td { border-bottom: 0; }
+.quotes-table td:first-child { text-align: left; }
+
+.q-group td {
+  background: var(--bg, rgba(0, 0, 0, 0.03));
+  font-size: 0.6rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-weight: 700;
+  padding: 3px 10px;
+}
+
+.q-name { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
+.q-sym { font-weight: 700; font-size: 0.72rem; color: var(--muted); width: 58px; flex: none; }
+.q-co {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.ticker-price {
-  font-size: 1.15rem;
-  font-weight: 700;
-  margin-top: 2px;
-}
-.ticker-delta-big {
-  font-size: 0.95rem;
-  font-weight: 700;
-}
-.ticker-deltas {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px 10px;
-  margin-top: 4px;
-  font-size: 0.7rem;
-}
-.ticker-delta-small .lbl {
-  color: var(--muted);
-  font-weight: 500;
-  margin-right: 2px;
-}
-.ticker-error,
-.ticker-loading {
-  color: var(--muted);
-  font-size: 0.8rem;
-  padding: 4px 0;
+.q-price { font-weight: 600; }
+.q-d1 { font-weight: 700; }
+.q-err { color: #dc2626; font-size: 0.7rem; }
+.q-load { color: var(--muted); font-size: 0.7rem; }
+
+/* Op smalle schermen alleen de belangrijkste kolommen. */
+@media (max-width: 700px) {
+  .quotes-table .q-hide-sm { display: none; }
+  .q-sym { width: 50px; }
+  .quotes-table td, .quotes-table th { padding: 5px 6px; }
 }
 
 .up { color: #16a34a; }

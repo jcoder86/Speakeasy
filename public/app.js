@@ -365,6 +365,31 @@ function trendClass(v) {
   return v > 0 ? 'up' : v < 0 ? 'down' : 'flat';
 }
 
+// Beurs afleiden uit het suffix — zelfde regel als quotes.js server-side.
+// Puur voor de groepskopjes; de data-routering gebeurt op de server.
+function exchangeOf(ticker) {
+  const t = ticker.toUpperCase();
+  if (t.endsWith('.ME')) return 'Moskou';
+  if (t.endsWith('.AS')) return 'Amsterdam';
+  if (t.endsWith('.WA') || t.endsWith('.WAR')) return 'Warschau';
+  if (t.includes('.')) return 'Europa';
+  return 'Verenigde Staten';
+}
+
+function cell(row, value, cls) {
+  const td = document.createElement('td');
+  if (cls) td.className = cls;
+  td.textContent = value;
+  row.appendChild(td);
+  return td;
+}
+
+function deltaCell(row, value, extraClass) {
+  const td = cell(row, pct(value), trendClass(value));
+  if (extraClass) td.classList.add(extraClass);
+  return td;
+}
+
 function renderQuotesStrip() {
   quotesStripEl.innerHTML = '';
   const quotesById = new Map(quotesCache.quotes.map((q) => [q.ticker, q]));
@@ -375,65 +400,88 @@ function renderQuotesStrip() {
     quotesStripEl.appendChild(empty);
     return;
   }
-  for (const item of watchlist.values()) {
-    const q = quotesById.get(item.ticker);
-    const card = document.createElement('div');
-    card.className = 'ticker-card';
-    card.dataset.ticker = item.ticker;
 
-    const head = document.createElement('div');
-    head.className = 'ticker-head';
-    const t = document.createElement('span');
-    t.className = 'ticker-symbol';
-    t.textContent = item.ticker;
-    head.appendChild(t);
-    if (item.display_name) {
-      const n = document.createElement('span');
-      n.className = 'ticker-name';
-      n.textContent = item.display_name;
-      head.appendChild(n);
-    }
-    card.appendChild(head);
+  const table = document.createElement('table');
+  table.className = 'quotes-table';
 
-    if (q && q.error) {
-      const err = document.createElement('div');
-      err.className = 'ticker-error';
-      err.textContent = q.error;
-      card.appendChild(err);
-    } else if (q) {
-      const price = document.createElement('div');
-      price.className = 'ticker-price';
-      price.textContent = priceStr(q.price, q.currency);
-      card.appendChild(price);
-
-      const d1 = document.createElement('div');
-      d1.className = 'ticker-delta-big ' + trendClass(q.deltas.d1);
-      d1.textContent = pct(q.deltas.d1);
-      card.appendChild(d1);
-
-      const rest = document.createElement('div');
-      rest.className = 'ticker-deltas';
-      const smalls = [
-        ['5d', q.deltas.d5],
-        ['21d', q.deltas.d21],
-        ['63d', q.deltas.d63],
-        ['YTD', q.deltas.ytd],
-      ];
-      for (const [label, val] of smalls) {
-        const s = document.createElement('span');
-        s.className = 'ticker-delta-small ' + trendClass(val);
-        s.innerHTML = `<span class="lbl">${label}</span> ${pct(val)}`;
-        rest.appendChild(s);
-      }
-      card.appendChild(rest);
-    } else {
-      const loading = document.createElement('div');
-      loading.className = 'ticker-loading';
-      loading.textContent = '…';
-      card.appendChild(loading);
-    }
-    quotesStripEl.appendChild(card);
+  const thead = document.createElement('thead');
+  const hr = document.createElement('tr');
+  for (const [label, cls] of [
+    ['Naam', ''], ['Koers', ''], ['1d', ''], ['5d', ''],
+    ['21d', 'q-hide-sm'], ['63d', 'q-hide-sm'], ['YTD', 'q-hide-sm'],
+  ]) {
+    const th = document.createElement('th');
+    th.textContent = label;
+    if (cls) th.className = cls;
+    hr.appendChild(th);
   }
+  thead.appendChild(hr);
+  table.appendChild(thead);
+
+  const tbody = document.createElement('tbody');
+  let currentGroup = null;
+
+  for (const item of watchlist.values()) {
+    const group = exchangeOf(item.ticker);
+    if (group !== currentGroup) {
+      currentGroup = group;
+      const gr = document.createElement('tr');
+      gr.className = 'q-group';
+      const gtd = document.createElement('td');
+      gtd.colSpan = 7;
+      gtd.textContent = group;
+      gr.appendChild(gtd);
+      tbody.appendChild(gr);
+    }
+
+    const q = quotesById.get(item.ticker);
+    const row = document.createElement('tr');
+    row.dataset.ticker = item.ticker;
+
+    // naam
+    const nameTd = document.createElement('td');
+    const wrap = document.createElement('div');
+    wrap.className = 'q-name';
+    const sym = document.createElement('span');
+    sym.className = 'q-sym';
+    sym.textContent = item.ticker;
+    wrap.appendChild(sym);
+    const co = document.createElement('span');
+    co.className = 'q-co';
+    co.textContent = item.display_name || '';
+    wrap.appendChild(co);
+    nameTd.appendChild(wrap);
+    row.appendChild(nameTd);
+
+    if (q && q.error && q.price === null) {
+      // geen enkele koers bekend: toon de reden, verder niets verzinnen
+      const td = document.createElement('td');
+      td.colSpan = 6;
+      td.className = 'q-err';
+      td.textContent = q.error;
+      row.appendChild(td);
+    } else if (q && q.price !== null && q.price !== undefined) {
+      const p = cell(row, priceStr(q.price, q.currency), 'q-price');
+      // laatst bekende koers bij een storing: markeren i.p.v. stilzwijgend tonen
+      if (q.error) p.title = `Laatst bekend — ${q.error}`;
+      deltaCell(row, q.deltas.d1, 'q-d1');
+      deltaCell(row, q.deltas.d5);
+      deltaCell(row, q.deltas.d21, 'q-hide-sm');
+      deltaCell(row, q.deltas.d63, 'q-hide-sm');
+      deltaCell(row, q.deltas.ytd, 'q-hide-sm');
+    } else {
+      const td = document.createElement('td');
+      td.colSpan = 6;
+      td.className = 'q-load';
+      td.textContent = 'laden…';
+      row.appendChild(td);
+    }
+
+    tbody.appendChild(row);
+  }
+
+  table.appendChild(tbody);
+  quotesStripEl.appendChild(table);
 }
 
 function renderWatchlistManager() {
