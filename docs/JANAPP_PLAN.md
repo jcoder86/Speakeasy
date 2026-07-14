@@ -10,7 +10,7 @@ Speakeasy (chatportal + to-do) wordt JanApp: een persoonlijke go-to pagina op de
 ## Genomen beslissingen
 - **Platform:** responsive PWA. Eén codebase, installeerbaar op telefoon, startpagina op desktop. Vereist HTTPS.
 - **Stack blijft:** Node/Express + vanilla JS, geen framework, geen build-step, `node:sqlite`, SSE. Bewezen en past bij de repo.
-- **Data:** hybride. Koersen live via Finnhub (server-side proxy, key in env). Watchlist-nieuws live via Finnhub company-news. Macro/AI-nieuws via aparte GitHub Actions-pipeline met Claude-scoring (rubric uit JanApp-project), die een `feed.json` publiceert.
+- **Data:** hybride. Koersen live via Finnhub (server-side proxy, key in env). Watchlist-nieuws live via Finnhub company-news. Macro/AI-nieuws via aparte GitHub Actions-pipeline met Claude-scoring (rubric uit JanApp-project), die een `feed.json` publiceert. Bronnen voorlopig zonder Reddit (HN, dev.to, GitHub Search API, RSS) — Reddit's API vereist een goedkeuringsaanvraag die nog loopt; zie `docs/PROMPT_PIPELINE.md` voor hoe die later toegevoegd wordt.
 - **Hosting:** bestaande Dokploy-setup (Traefik verzorgt HTTPS). Geen Caddy, geen wijzigingen aan de proxy-laag.
 - **Watchlist:** configureerbaar in de app zelf (geen hardcoded tickers).
 - **Geen auth:** bewuste keuze — noindex/nofollow + robots.txt, link wordt nergens gedeeld.
@@ -47,7 +47,7 @@ Speakeasy (chatportal + to-do) wordt JanApp: een persoonlijke go-to pagina op de
 | 1 | To-do pro: labels, filteren, UI-verbetering lange lijsten | Professionele to-do |
 | 2 | Watchlist + koersen (Finnhub-proxy, deltas, cache) | Live koersenblok |
 | 3a | Watchlist-nieuws (Finnhub company-news) | Nieuws per aandeel |
-| 3b | Pipeline-repo `janapp-feed` bouwen (aparte prompt) | Dagelijkse gecureerde macro/AI-feed |
+| 3b | Pipeline-repo `janapp-feed` bouwen (aparte prompt, zonder Reddit voorlopig) | Dagelijkse gecureerde macro/AI-feed |
 | 4 | Deploy via bestaande Dokploy: env vars, DEPLOY.md | Live, startpagina + telefoon-icoon |
 
 ## Kosten

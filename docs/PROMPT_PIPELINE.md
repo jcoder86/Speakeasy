@@ -7,7 +7,7 @@ Voor een **nieuwe, aparte private repo**. Kopieer alles onder de streep in Claud
 Bouw een dagelijkse nieuws-curatiepipeline die een `feed.json` publiceert voor mijn persoonlijke dashboard (JanApp). Python 3.11+, draait als GitHub Actions cron (dagelijks 06:00 Europe/Amsterdam), geen server.
 
 ## Architectuur
-1. **Ophalen (code, geen LLM):** RSS/Atom + Hacker News API + Reddit via PRAW. Dedupliceren op url (state in `state/seen.json`, gecommit door de action), leeftijdsfilter 48u (continue modus), engagement-drempels per platform (zie onder).
+1. **Ophalen (code, geen LLM):** RSS/Atom + Hacker News API + dev.to public API + GitHub Search API. Dedupliceren op url (state in `state/seen.json`, gecommit door de action), leeftijdsfilter 48u (continue modus), engagement-drempels per platform (zie onder). **Geen Reddit in deze versie** — zie "Later toevoegen" onderaan.
 2. **Scoring-cascade:** kandidaten eerst door **Claude Haiku 4.5** voor relevantie-scoring per rubric (goedkoop, batch van items per call). Items boven drempel daarna door **Claude Sonnet** voor NL-samenvatting volgens format. API-key via GitHub Secret `ANTHROPIC_API_KEY`.
 3. **Publiceren:** schrijf `feed.json` naar de repo (of GitHub Pages-branch). Bestaande items behouden met decay; items onder feed-drempel verwijderen.
 
@@ -23,10 +23,27 @@ Hard uitsluiten vóór scoring: industrie-nieuws/modellanceringen/M&A, "10 ways 
 Voor `macro`: eigen lichtere rubric — significantie (0-3), beursimpact (0-3), actualiteit (0-2), drempel ≥ 5. Zelfde decay.
 
 ## Engagement-drempels (sanity-check)
-HN 15+ punten of 5+ comments; Reddit 25+ upvotes of 10+ comments; GitHub 10+ stars/week; dev.to 15+ reacties; Indie Hackers 10+ upvotes.
+HN 15+ punten of 5+ comments; GitHub 10+ stars/week; dev.to 15+ reacties.
 
-## Bronnen
-`sources.yaml`, configureerbaar. Startset ai_usecase: HN (Show HN), r/LocalLLaMA, r/ClaudeAI, r/selfhosted, r/homelab, Indie Hackers, dev.to, GitHub Trending, anthropic.com/news. Startset macro: FT/Reuters/Bloomberg RSS (vrij beschikbare feeds), ECB/Fed-persberichten, r/economics (hoge drempel).
+## Bronnen (geen auth/goedkeuring nodig)
+`sources.yaml`, configureerbaar.
+
+**Startset `ai_usecase`:**
+- Hacker News (Show HN + top-stories via de publieke HN Firebase API, geen key nodig).
+- dev.to — publieke API zonder auth: `https://dev.to/api/articles?tag=ai&top=7`.
+- GitHub — officiële Search API (geen auth voor laag volume, wel rate-limited zonder token):
+  repo's aangemaakt in de laatste 7 dagen gesorteerd op sterren, als vervanging voor
+  "GitHub Trending" (dat geen officiële API heeft). Bijv.
+  `GET /search/repositories?q=created:>{date}&sort=stars&order=desc`.
+- anthropic.com/news RSS (indien beschikbaar; anders overslaan zonder falen).
+
+**Startset `macro`:**
+- Vrij beschikbare RSS-feeds van gevestigde bronnen (Reuters/Bloomberg/FT waar een
+  publieke RSS-feed bestaat — controleer bij setup, sommige zijn ingetrokken).
+- ECB- en Fed-persberichten (beide hebben publieke RSS/Atom-feeds, geen auth).
+
+**Bewust weggelaten in deze versie:** Reddit (r/LocalLLaMA, r/ClaudeAI, r/selfhosted,
+r/homelab, r/economics) en Indie Hackers (geen publieke API). Zie "Later toevoegen".
 
 ## Samenvattings-format (Sonnet, NL, warm-zakelijk, geen hype)
 Per item 3-5 zinnen: titel-hook, wat/hoe/de slimme vondst, "Inspirerend omdat: …" alleen indien niet evident, "Wat je nodig hebt: …" altijd concreet, inline bronlink.
@@ -37,7 +54,7 @@ Per item 3-5 zinnen: titel-hook, wat/hoe/de slimme vondst, "Inspirerend omdat: �
   "generated_at": "ISO-8601",
   "items": [{
     "id": "hash", "title": "…", "summary_nl": "…", "url": "…",
-    "source": "hn|reddit:sub|rss:naam", "category": "macro|ai_usecase",
+    "source": "hn|devto|github|rss:naam", "category": "macro|ai_usecase",
     "score": 9, "final_score": 8.4, "published_at": "ISO-8601"
   }]
 }
@@ -51,12 +68,34 @@ janapp-feed/
   sources.yaml
   state/seen.json
   feed.json
-  requirements.txt (feedparser, praw, anthropic, pyyaml, httpx)
+  requirements.txt (feedparser, anthropic, pyyaml, httpx)
 ```
+`fetch.py` haalt per bron-type op (HN/devto/github/rss) — structureer met één functie
+per bron-type zodat een Reddit-fetcher later als extra functie toegevoegd kan worden
+zonder de rest te raken.
 
 ## Kwaliteitseisen
 - Audit-trail: log per run wat is uitgesloten en waarom (artifact of `state/last_run_log.md`).
 - Bootstrap-modus via workflow_dispatch-input (`days=90`) voor de eerste vulling.
 - Kosten bewaken: prefilter agressief in code vóór elke LLM-call; verwacht budget ~€1-2/mnd.
-- Secrets: `ANTHROPIC_API_KEY`, `REDDIT_CLIENT_ID/SECRET/USER_AGENT` als GitHub Secrets.
-- Voeg een `README.md` toe met setup-stappen (secrets aanmaken, eerste bootstrap-run, FEED_URL voor JanApp = raw-URL van feed.json).
+- Secrets: alleen `ANTHROPIC_API_KEY` als GitHub Secret nodig in deze versie.
+- Voeg een `README.md` toe met setup-stappen (secret aanmaken, eerste bootstrap-run, FEED_URL voor JanApp = raw-URL van feed.json).
+- GitHub Search API zonder token heeft een laag rate-limit (10 req/min) — cache/beperk
+  het aantal calls per run (bijv. 1 query per dagrun is ruim voldoende).
+
+## Later toevoegen: Reddit-bronnen
+Reddit vereist tegenwoordig een aparte goedkeuringsaanvraag voor nieuwe API-apps
+("script"-app aanmaken op reddit.com/prefs/apps loopt vast op een extra
+beoordelingsstap). Zodra die aanvraag is goedgekeurd:
+
+1. `pip install praw` toevoegen aan `requirements.txt`.
+2. GitHub Secrets toevoegen: `REDDIT_CLIENT_ID`, `REDDIT_CLIENT_SECRET`, `REDDIT_USER_AGENT`.
+3. Een `fetch_reddit()`-functie toevoegen in `src/fetch.py` naast de bestaande
+   bron-functies (zelfde interface: geeft een lijst kandidaat-items terug).
+4. Subs terugzetten in `sources.yaml`: r/LocalLLaMA, r/ClaudeAI, r/selfhosted,
+   r/homelab (ai_usecase), r/economics met hoge drempel (macro).
+5. Engagement-drempel Reddit: 25+ upvotes of 10+ comments (ongewijzigd t.o.v. het
+   oorspronkelijke plan).
+
+Verder niets aan de architectuur wijzigen — de scoring-cascade en het output-schema
+blijven identiek, Reddit-items stromen gewoon door dezelfde pipeline.
