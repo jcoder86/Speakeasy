@@ -285,7 +285,7 @@ async function refreshAll(broadcast) {
   if (running) return;
   running = true;
   try {
-    const list = db.prepare('SELECT ticker FROM watchlist ORDER BY added_at ASC').all();
+    const list = db.prepare('SELECT ticker FROM watchlist ORDER BY position ASC, added_at ASC').all();
 
     /* Wisselkoers als éérste in de gate-rij zetten, zodat MOEX-tickers meteen
        naar euro kunnen. Anders belandt de fx-call achter de US-tickers en toont
@@ -346,7 +346,7 @@ async function refreshTicker(ticker, broadcast) {
 }
 
 function snapshot() {
-  const list = db.prepare('SELECT ticker, display_name FROM watchlist ORDER BY added_at ASC').all();
+  const list = db.prepare('SELECT ticker, display_name FROM watchlist ORDER BY position ASC, added_at ASC').all();
   const quotes = list.map((w) => {
     const s = SNAPSHOT.get(w.ticker);
     if (!s) {

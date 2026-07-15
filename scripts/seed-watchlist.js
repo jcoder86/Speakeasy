@@ -28,10 +28,6 @@ const TICKERS = [
   ['ABN.AS', 'ABN AMRO Bank'],
   ['BFIT.AS', 'Basic-Fit'],
   ['FLOW.AS', 'Flow Traders'],
-  ['ASML.AS', 'ASML Holding'],
-
-  // --- Warschau ---
-  ['CDR.WA', 'CD Projekt'],
 
   // --- Moskou ---
   ['OZON.ME', 'Ozon Holdings'],
@@ -40,14 +36,11 @@ const TICKERS = [
   ['AI', 'C3.ai'],
   ['CEG', 'Constellation Energy'],
   ['CRDO', 'Credo Technology'],
-  ['CWCO', 'Consolidated Water'],
   ['MPWR', 'Monolithic Power'],
   ['MSCI', 'MSCI'],
   ['MU', 'Micron Technology'],
   ['QCOM', 'QUALCOMM'],
-  ['U', 'Unity Software'],
   ['UNH', 'UnitedHealth'],
-  ['UPST', 'Upstart'],
   ['VST', 'Vistra'],
 ];
 

@@ -347,8 +347,10 @@ app.delete('/api/todos/:id', (req, res) => {
 });
 
 /* ---------- Watchlist ---------- */
+// Sorteren op handmatige positie; added_at als tiebreak/fallback.
+const WATCHLIST_ORDER = 'ORDER BY position ASC, added_at ASC';
 app.get('/api/watchlist', (req, res) => {
-  res.json(db.prepare('SELECT * FROM watchlist ORDER BY added_at ASC').all());
+  res.json(db.prepare(`SELECT * FROM watchlist ${WATCHLIST_ORDER}`).all());
 });
 
 app.post('/api/watchlist', (req, res) => {
@@ -361,9 +363,11 @@ app.post('/api/watchlist', (req, res) => {
     return res.status(400).json({ error: 'Ongeldige ticker (max 12 tekens, letters/cijfers/./-).' });
   }
   try {
+    // Nieuwe ticker onderaan: positie = huidige max + 1.
+    const nextPos = db.prepare('SELECT COALESCE(MAX(position), -1) + 1 AS p FROM watchlist').get().p;
     const info = db
-      .prepare('INSERT INTO watchlist (ticker, display_name, added_at) VALUES (?, ?, ?)')
-      .run(raw, displayName, Date.now());
+      .prepare('INSERT INTO watchlist (ticker, display_name, added_at, position) VALUES (?, ?, ?, ?)')
+      .run(raw, displayName, Date.now(), nextPos);
     const item = db.prepare('SELECT * FROM watchlist WHERE id = ?').get(Number(info.lastInsertRowid));
     broadcast('watchlist:new', item);
     res.status(201).json(item);
@@ -385,6 +389,30 @@ app.delete('/api/watchlist/:id', (req, res) => {
   // prices-rijen bewust laten staan: als de user 'em later weer toevoegt,
   // is de historie meteen bruikbaar voor deltas.
   broadcast('watchlist:delete', { id });
+  res.json({ ok: true });
+});
+
+// Nieuwe volgorde: body { ids: [id, id, ...] } → position = index.
+// De client stuurt de volledige gewenste volgorde; de server is dom en zet 'm om.
+app.post('/api/watchlist/reorder', (req, res) => {
+  const ids = Array.isArray(req.body.ids) ? req.body.ids.map(Number) : null;
+  if (!ids || ids.some((n) => !Number.isInteger(n))) {
+    return res.status(400).json({ error: 'Ongeldige volgorde.' });
+  }
+  const known = new Set(db.prepare('SELECT id FROM watchlist').all().map((r) => r.id));
+  if (ids.length !== known.size || !ids.every((n) => known.has(n))) {
+    return res.status(409).json({ error: 'Volgorde komt niet overeen met de watchlist.' });
+  }
+  const upd = db.prepare('UPDATE watchlist SET position = ? WHERE id = ?');
+  db.exec('BEGIN');
+  try {
+    ids.forEach((id, i) => upd.run(i, id));
+    db.exec('COMMIT');
+  } catch (err) {
+    db.exec('ROLLBACK');
+    throw err;
+  }
+  broadcast('watchlist:reorder', { ids });
   res.json({ ok: true });
 });
 

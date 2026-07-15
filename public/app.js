@@ -394,8 +394,8 @@ function deltaCell(row, value, extraClass) {
 // zodat hij aansluit bij de percentages ernaast.
 const SVG_NS = 'http://www.w3.org/2000/svg';
 function sparklineSvg(closes, trend) {
-  const w = 68;
-  const h = 20;
+  const w = 120;
+  const h = 22;
   const pad = 2;
   const svg = document.createElementNS(SVG_NS, 'svg');
   svg.setAttribute('width', w);
@@ -448,7 +448,7 @@ function renderQuotesStrip() {
   for (const [label, cls] of [
     ['Naam', ''], ['Koers', ''], ['1d', ''], ['1w', ''],
     ['1m', 'q-hide-sm'], ['3m', 'q-hide-sm'], ['YTD', 'q-hide-sm'],
-    ['', 'q-hide-sm'], // sparkline-kolom, geen kop nodig
+    ['', 'q-hide-sm q-spark'], // sparkline-kolom, geen kop nodig
   ]) {
     const th = document.createElement('th');
     th.textContent = label;
@@ -558,22 +558,101 @@ function renderWatchlistManager() {
     watchlistListEl.appendChild(p);
     return;
   }
-  for (const item of watchlist.values()) {
-    const row = document.createElement('div');
-    row.className = 'watchlist-row';
-    const label = document.createElement('span');
-    label.className = 'watchlist-label';
-    label.textContent = item.display_name
-      ? `${item.ticker} — ${item.display_name}`
-      : item.ticker;
-    row.appendChild(label);
-    const del = document.createElement('button');
-    del.type = 'button';
-    del.className = 'icon-btn';
-    del.textContent = 'Verwijder';
-    del.addEventListener('click', () => removeWatchlistItem(item.id));
-    row.appendChild(del);
-    watchlistListEl.appendChild(row);
+  // Zelfde groepering als de koerstabel, zodat verschuiven binnen de eigen beurs
+  // gebeurt (cross-beurs verschuiven zou in de gegroepeerde tabel niets doen).
+  const items = [...watchlist.values()];
+  const GROUP_ORDER = ['Verenigde Staten', 'Amsterdam', 'Warschau', 'Moskou', 'Europa'];
+  const buckets = new Map();
+  for (const item of items) {
+    const g = exchangeOf(item.ticker);
+    if (!buckets.has(g)) buckets.set(g, []);
+    buckets.get(g).push(item);
+  }
+  const ordered = [
+    ...GROUP_ORDER.filter((g) => buckets.has(g)),
+    ...[...buckets.keys()].filter((g) => !GROUP_ORDER.includes(g)),
+  ];
+
+  for (const g of ordered) {
+    const groupItems = buckets.get(g);
+    const head = document.createElement('div');
+    head.className = 'wl-group';
+    head.textContent = g;
+    watchlistListEl.appendChild(head);
+
+    groupItems.forEach((item, i) => {
+      const row = document.createElement('div');
+      row.className = 'watchlist-row';
+
+      const moves = document.createElement('span');
+      moves.className = 'wl-moves';
+      const up = document.createElement('button');
+      up.type = 'button';
+      up.className = 'wl-move';
+      up.textContent = '▲';
+      up.title = 'Omhoog';
+      up.disabled = i === 0;
+      up.addEventListener('click', () => moveWithinGroup(g, item.id, -1));
+      const down = document.createElement('button');
+      down.type = 'button';
+      down.className = 'wl-move';
+      down.textContent = '▼';
+      down.title = 'Omlaag';
+      down.disabled = i === groupItems.length - 1;
+      down.addEventListener('click', () => moveWithinGroup(g, item.id, +1));
+      moves.appendChild(up);
+      moves.appendChild(down);
+      row.appendChild(moves);
+
+      const label = document.createElement('span');
+      label.className = 'watchlist-label';
+      label.textContent = item.display_name
+        ? `${item.ticker} — ${item.display_name}`
+        : item.ticker;
+      row.appendChild(label);
+
+      const del = document.createElement('button');
+      del.type = 'button';
+      del.className = 'icon-btn';
+      del.textContent = 'Verwijder';
+      del.addEventListener('click', () => removeWatchlistItem(item.id));
+      row.appendChild(del);
+
+      watchlistListEl.appendChild(row);
+    });
+  }
+}
+
+// Verschuif een ticker één plek binnen zijn beursgroep en persisteer de nieuwe
+// volgorde. Optimistisch: lokaal meteen bijwerken, dan naar de server.
+async function moveWithinGroup(group, id, dir) {
+  const items = [...watchlist.values()];
+  const groupIds = items.filter((it) => exchangeOf(it.ticker) === group).map((it) => it.id);
+  const gi = groupIds.indexOf(id);
+  const target = gi + dir;
+  if (gi < 0 || target < 0 || target >= groupIds.length) return;
+
+  // swap in de volledige lijst op de posities van beide groepsleden
+  const flat = items.map((it) => it.id);
+  const aPos = flat.indexOf(groupIds[gi]);
+  const bPos = flat.indexOf(groupIds[target]);
+  [flat[aPos], flat[bPos]] = [flat[bPos], flat[aPos]];
+
+  // lokale Map in nieuwe volgorde herbouwen (Map bewaart invoegvolgorde)
+  const byId = new Map(watchlist);
+  watchlist.clear();
+  for (const fid of flat) watchlist.set(fid, byId.get(fid));
+  renderWatchlistManager();
+  renderQuotesStrip();
+
+  try {
+    await fetch('/api/watchlist/reorder', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids: flat }),
+    });
+  } catch {
+    loadWatchlist(); // bij een fout terug naar de serverwaarheid
   }
 }
 
@@ -1226,6 +1305,10 @@ function connectSSE() {
     renderWatchlistManager();
     renderQuotesStrip();
     loadStockNews();
+  });
+  source.addEventListener('watchlist:reorder', () => {
+    // volgorde elders gewijzigd → serverwaarheid ophalen en opnieuw tekenen
+    loadWatchlist();
   });
 }
 

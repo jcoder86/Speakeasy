@@ -117,28 +117,30 @@ body[data-view="chat"] #chat-view {
   overflow: hidden;
   font-variant-numeric: tabular-nums;
 }
-.quotes-table th {
+/* Alle tekstkolommen trekken links samen (width:1% + nowrap = hug content);
+   de sparlkine-kolom heeft géén breedte en slokt zo alle overige ruimte op. */
+.quotes-table th,
+.quotes-table td {
+  width: 1%;
+  white-space: nowrap;
+  padding: 3px 7px;
   text-align: right;
+}
+.quotes-table th {
   font-size: 0.62rem;
   letter-spacing: 0.05em;
   text-transform: uppercase;
   color: var(--muted);
   font-weight: 600;
-  padding: 6px 10px;
   border-bottom: 1px solid var(--border);
-  white-space: nowrap;
 }
-.quotes-table th:first-child { text-align: left; }
-
 .quotes-table td {
-  padding: 5px 10px;
-  text-align: right;
-  white-space: nowrap;
   border-bottom: 1px solid var(--border);
   font-size: 0.82rem;
 }
+.quotes-table th:first-child,
+.quotes-table td:first-child { text-align: left; padding-left: 10px; }
 .quotes-table tr:last-child td { border-bottom: 0; }
-.quotes-table td:first-child { text-align: left; }
 
 .q-group td {
   background: var(--bg, rgba(0, 0, 0, 0.03));
@@ -150,9 +152,10 @@ body[data-view="chat"] #chat-view {
   padding: 3px 10px;
 }
 
-.q-name { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
-.q-sym { font-weight: 700; font-size: 0.72rem; color: var(--muted); width: 58px; flex: none; }
+.q-name { display: flex; align-items: baseline; gap: 5px; min-width: 0; }
+.q-sym { font-weight: 700; font-size: 0.72rem; color: var(--muted); flex: none; }
 .q-co {
+  max-width: 168px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -162,15 +165,18 @@ body[data-view="chat"] #chat-view {
 .q-err { color: #dc2626; font-size: 0.7rem; }
 .q-load { color: var(--muted); font-size: 0.7rem; }
 
-/* Sparkline-kolom: smal, lijn hangt rechts uitgelijnd in de cel. */
-.q-spark { width: 72px; padding-left: 4px; padding-right: 8px; }
-.q-spark .spark { display: block; margin-left: auto; }
+/* Sparkline-kolom: geen width:1% → krijgt alle resterende ruimte; de lijn
+   hangt rechts, met wat lucht tot de YTD-kolom. */
+/* Sparkline direct achter YTD (links in een brede cel); de resterende ruimte
+   valt daardoor rechts ná de lijn, niet als gat ervoor. */
+.quotes-table td.q-spark,
+.quotes-table th.q-spark { width: auto; padding-left: 16px; padding-right: 10px; }
+.q-spark .spark { display: block; margin-left: 0; }
 
 /* Op smalle schermen alleen de belangrijkste kolommen. */
 @media (max-width: 700px) {
   .quotes-table .q-hide-sm { display: none; }
-  .q-sym { width: 50px; }
-  .quotes-table td, .quotes-table th { padding: 5px 6px; }
+  .quotes-table td, .quotes-table th { padding: 3px 5px; }
 }
 
 .up { color: #16a34a; }
@@ -207,6 +213,34 @@ body[data-view="chat"] #chat-view {
   border: 1px solid var(--border);
   border-radius: 8px;
 }
+
+/* Beursgroep-kopje in het beheerpaneel (spiegelt de koerstabel). */
+.wl-group {
+  font-size: 0.6rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-weight: 700;
+  padding: 6px 2px 2px;
+}
+.wl-group:first-child { padding-top: 2px; }
+
+/* Verschuif-knoppen ▲▼ */
+.wl-moves { display: inline-flex; flex-direction: column; gap: 1px; flex: none; }
+.wl-move {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--muted);
+  border-radius: 4px;
+  width: 20px;
+  height: 15px;
+  line-height: 1;
+  font-size: 0.55rem;
+  padding: 0;
+  cursor: pointer;
+}
+.wl-move:hover:not(:disabled) { color: var(--text, #111); border-color: var(--muted); }
+.wl-move:disabled { opacity: 0.3; cursor: default; }
 .watchlist-label {
   flex: 1 1 auto;
   min-width: 0;

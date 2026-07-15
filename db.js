@@ -73,4 +73,15 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_prices_ticker_date ON prices(ticker, date DESC);
 `);
 
+// --- Additieve migratie: watchlist.position voor handmatige volgorde ---
+// ALTER TABLE ADD COLUMN faalt als de kolom al bestaat, dus eerst checken.
+const wlCols = db.prepare('PRAGMA table_info(watchlist)').all();
+if (!wlCols.some((c) => c.name === 'position')) {
+  db.exec('ALTER TABLE watchlist ADD COLUMN position INTEGER');
+  // Bestaande rijen krijgen een positie in hun huidige volgorde (added_at).
+  const rows = db.prepare('SELECT id FROM watchlist ORDER BY added_at ASC, id ASC').all();
+  const upd = db.prepare('UPDATE watchlist SET position = ? WHERE id = ?');
+  rows.forEach((r, i) => upd.run(i, r.id));
+}
+
 module.exports = { db, DATA_DIR, UPLOADS_DIR };

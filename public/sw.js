@@ -11,8 +11,8 @@
  * de oude cache en fetchen clients de nieuwe versie.
  */
 
-// v4: leesbare koppen (1d/1w/1m/3m/YTD) + sparkline terug.
-const CACHE_VERSION = 'janapp-v4';
+// v5: compactere tabel, ruimere sparkline, herordenen in beheerpaneel.
+const CACHE_VERSION = 'janapp-v5';
 const STATIC_ASSETS = [
   '/',
   '/index.html',
