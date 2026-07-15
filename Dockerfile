@@ -7,9 +7,11 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev
 
-# Applicatiebestanden.
-COPY server.js db.js ./
+# Applicatiebestanden. LET OP: nieuwe top-level .js-modules hier toevoegen,
+# anders crasht de container op een ontbrekende require.
+COPY server.js db.js quotes.js ./
 COPY public ./public
+COPY scripts ./scripts
 
 ENV NODE_ENV=production
 # Db (chat.db) en uploads/ leven onder /data — gekoppeld als volume.
