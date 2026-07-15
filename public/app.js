@@ -390,6 +390,43 @@ function deltaCell(row, value, extraClass) {
   return td;
 }
 
+// Compacte sparkline als inline-SVG. Kleur volgt de trend (groen op/rood neer),
+// zodat hij aansluit bij de percentages ernaast.
+const SVG_NS = 'http://www.w3.org/2000/svg';
+function sparklineSvg(closes, trend) {
+  const w = 68;
+  const h = 20;
+  const pad = 2;
+  const svg = document.createElementNS(SVG_NS, 'svg');
+  svg.setAttribute('width', w);
+  svg.setAttribute('height', h);
+  svg.setAttribute('viewBox', `0 0 ${w} ${h}`);
+  svg.classList.add('spark');
+  if (!Array.isArray(closes) || closes.length < 3) return svg;
+
+  const min = Math.min(...closes);
+  const max = Math.max(...closes);
+  const range = max - min || 1;
+  const pts = closes
+    .map((c, i) => {
+      const x = pad + (i * (w - 2 * pad)) / (closes.length - 1);
+      const y = h - pad - ((c - min) / range) * (h - 2 * pad);
+      return `${x.toFixed(1)},${y.toFixed(1)}`;
+    })
+    .join(' ');
+
+  const line = document.createElementNS(SVG_NS, 'polyline');
+  line.setAttribute('points', pts);
+  line.setAttribute('fill', 'none');
+  line.setAttribute('stroke-width', '1.4');
+  line.setAttribute('stroke-linejoin', 'round');
+  line.setAttribute('stroke-linecap', 'round');
+  const up = trend == null ? null : trend >= 0;
+  line.setAttribute('stroke', up === null ? '#94a3b8' : up ? '#16a34a' : '#dc2626');
+  svg.appendChild(line);
+  return svg;
+}
+
 function renderQuotesStrip() {
   quotesStripEl.innerHTML = '';
   const quotesById = new Map(quotesCache.quotes.map((q) => [q.ticker, q]));
@@ -406,9 +443,12 @@ function renderQuotesStrip() {
 
   const thead = document.createElement('thead');
   const hr = document.createElement('tr');
+  // Handelsdagen, maar leesbare koppen: 5 handelsdagen ≈ 1 week, 21 ≈ 1 maand,
+  // 63 ≈ 3 maanden. Zonder weekend-vertekening, wél begrijpelijk.
   for (const [label, cls] of [
-    ['Naam', ''], ['Koers', ''], ['1d', ''], ['5d', ''],
-    ['21d', 'q-hide-sm'], ['63d', 'q-hide-sm'], ['YTD', 'q-hide-sm'],
+    ['Naam', ''], ['Koers', ''], ['1d', ''], ['1w', ''],
+    ['1m', 'q-hide-sm'], ['3m', 'q-hide-sm'], ['YTD', 'q-hide-sm'],
+    ['', 'q-hide-sm'], // sparkline-kolom, geen kop nodig
   ]) {
     const th = document.createElement('th');
     th.textContent = label;
@@ -447,7 +487,7 @@ function renderQuotesStrip() {
       const gr = document.createElement('tr');
       gr.className = 'q-group';
       const gtd = document.createElement('td');
-      gtd.colSpan = 7;
+      gtd.colSpan = 8;
       gtd.textContent = entry.group;
       gr.appendChild(gtd);
       tbody.appendChild(gr);
@@ -476,7 +516,7 @@ function renderQuotesStrip() {
     if (q && q.error && q.price === null) {
       // geen enkele koers bekend: toon de reden, verder niets verzinnen
       const td = document.createElement('td');
-      td.colSpan = 6;
+      td.colSpan = 7;
       td.className = 'q-err';
       td.textContent = q.error;
       row.appendChild(td);
@@ -489,9 +529,14 @@ function renderQuotesStrip() {
       deltaCell(row, q.deltas.d21, 'q-hide-sm');
       deltaCell(row, q.deltas.d63, 'q-hide-sm');
       deltaCell(row, q.deltas.ytd, 'q-hide-sm');
+      // sparkline (30 handelsdagen), kleur volgt de 1m-trend
+      const sp = document.createElement('td');
+      sp.className = 'q-hide-sm q-spark';
+      sp.appendChild(sparklineSvg(q.spark, q.deltas.d21));
+      row.appendChild(sp);
     } else {
       const td = document.createElement('td');
-      td.colSpan = 6;
+      td.colSpan = 7;
       td.className = 'q-load';
       td.textContent = 'laden…';
       row.appendChild(td);

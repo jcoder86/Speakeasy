@@ -25,7 +25,9 @@
  * de prices-tabel zet. /api/quotes serveert dus altijd direct een snapshot.
  */
 
-const { db } = require('./db');
+const fs = require('node:fs');
+const path = require('node:path');
+const { db, DATA_DIR } = require('./db');
 
 const TD_KEY = () => process.env.TWELVEDATA_API_KEY || '';
 const EOD_KEY = () => process.env.EODHD_API_KEY || '';
@@ -157,26 +159,50 @@ function guessCurrency(sym) {
 }
 
 /* ---------- EUR/RUB, om roebels als bedrag in euro te tonen ---------- */
-let fxCache = { rate: null, ts: 0 };
+/* Persistent op schijf: een herstart hoeft de koers dan niet opnieuw op te
+   halen (belangrijk, want vlak na een herstart is Twelve Data's minuutlimiet
+   account-breed vaak nog vol → de fx-call faalt en Ozon bleef dan tot de
+   volgende ronde in roebels staan). */
+const FX_FILE = path.join(DATA_DIR, 'fx-eurrub.json');
 const FX_TTL = 6 * 60 * 60 * 1000;
+const FX_STALE_OK = 7 * 24 * 60 * 60 * 1000; // als fallback tot een week oud bruikbaar
+
+let fxCache = { rate: null, ts: 0 };
+let fxInflight = null;
+try {
+  const saved = JSON.parse(fs.readFileSync(FX_FILE, 'utf8'));
+  if (saved && Number.isFinite(saved.rate) && saved.rate > 0) fxCache = saved;
+} catch { /* nog geen bestand — eerste run */ }
+
+// De koers om te rekenen: vers uit cache, of desnoods een oude als fallback.
+function fxRate() {
+  return (fxCache.rate && Date.now() - fxCache.ts < FX_STALE_OK) ? fxCache.rate : null;
+}
 
 async function eurRub() {
   if (fxCache.rate && Date.now() - fxCache.ts < FX_TTL) return fxCache.rate;
+  // Eén gedeelde call: zonder dit vroeg elke MOEX-ticker parallel z'n eigen
+  // wisselkoers op (meerdere credits + race).
+  if (fxInflight) return fxInflight;
   const key = TD_KEY();
   if (!key) return null;
-  try {
-    await tdGate();
-    const p = new URLSearchParams({
-      symbol: 'EUR/RUB', interval: '1day', outputsize: '1', order: 'desc', apikey: key,
-    });
-    const j = await (await fetch(`https://api.twelvedata.com/time_series?${p}`)).json();
-    const rate = parseFloat(j?.values?.[0]?.close);
-    if (Number.isFinite(rate) && rate > 0) {
-      fxCache = { rate, ts: Date.now() };
-      return rate;
-    }
-  } catch { /* fx is bijzaak: zonder koers tonen we gewoon roebels */ }
-  return null;
+  fxInflight = (async () => {
+    try {
+      await tdGate();
+      const p = new URLSearchParams({
+        symbol: 'EUR/RUB', interval: '1day', outputsize: '1', order: 'desc', apikey: key,
+      });
+      const j = await (await fetch(`https://api.twelvedata.com/time_series?${p}`)).json();
+      const rate = parseFloat(j?.values?.[0]?.close);
+      if (Number.isFinite(rate) && rate > 0) {
+        fxCache = { rate, ts: Date.now() };
+        try { fs.writeFileSync(FX_FILE, JSON.stringify(fxCache)); } catch { /* niet fataal */ }
+        return rate;
+      }
+    } catch { /* fx is bijzaak: zonder koers tonen we gewoon roebels */ }
+    return null;
+  })().finally(() => { fxInflight = null; });
+  return fxInflight;
 }
 
 /* ---------- deltas ---------- */
@@ -199,6 +225,16 @@ function deltaYTD(bars) {
   return (bars[0].close - ref) / ref;
 }
 
+/* ~30 slotkoersen, oud->nieuw, voor de sparkline in de UI.
+   Voor roebels rekenen we het bedrag om (zelfde als de getoonde koers), zodat
+   de lijn in dezelfde eenheid staat. De vorm blijft identiek — alleen de schaal
+   verschilt, en de sparkline is toch schaalloos. */
+function sparkFrom(bars, rate) {
+  const closes = bars.slice(0, 30).reverse().map((b) => b.close);
+  if (rate) return closes.map((c) => c / rate);
+  return closes;
+}
+
 /* ---------- één ticker ophalen ---------- */
 async function fetchTicker(ticker) {
   const { src, sym } = route(ticker);
@@ -215,12 +251,15 @@ async function fetchTicker(ticker) {
 
   let price = bars[0].close;
   let currency = s.currency;
+  let fxUsed = null;
 
   /* Roebels: percentages blijven op de RUB-reeks (zuivere performance van het
-     aandeel, zonder valuta-effect); alleen het bedrag tonen we in euro. */
+     aandeel, zonder valuta-effect); alleen het bedrag tonen we in euro.
+     Verse koers proberen, anders de laatst bekende (fxRate) — beter een dag
+     oude wisselkoers dan een roebelbedrag naast euro-genoteerde buren. */
   if (currency === 'RUB') {
-    const rate = await eurRub();
-    if (rate) { price = bars[0].close / rate; currency = 'EUR'; }
+    const rate = (await eurRub()) || fxRate();
+    if (rate) { price = bars[0].close / rate; currency = 'EUR'; fxUsed = rate; }
   }
 
   return {
@@ -235,6 +274,7 @@ async function fetchTicker(ticker) {
       d63: deltaBars(bars, 63),
       ytd: deltaYTD(bars),
     },
+    spark: sparkFrom(bars, fxUsed),
     error: null,
     ts: Date.now(),
   };
@@ -246,6 +286,11 @@ async function refreshAll(broadcast) {
   running = true;
   try {
     const list = db.prepare('SELECT ticker FROM watchlist ORDER BY added_at ASC').all();
+
+    /* Wisselkoers als éérste in de gate-rij zetten, zodat MOEX-tickers meteen
+       naar euro kunnen. Anders belandt de fx-call achter de US-tickers en toont
+       Ozon minutenlang roebels. Niet awaiten: hij deelt de in-flight call. */
+    if (TD_KEY() && list.some((w) => route(w.ticker).src === 'moex')) eurRub();
 
     /* Alles tegelijk starten: de credit-poort hierboven doseert de Twelve
        Data-calls vanzelf, en EODHD/MOEX hebben geen krappe minuutlimiet.
@@ -286,6 +331,7 @@ async function runOne(ticker, attempt = 0) {
       prev_close: prev?.prev_close ?? null,
       currency: prev?.currency ?? null,
       deltas: prev?.deltas ?? { d1: null, d5: null, d21: null, d63: null, ytd: null },
+      spark: prev?.spark ?? null,
       error: msg.slice(0, 90),
       ts: Date.now(),
     });
@@ -329,10 +375,15 @@ function hydrateFromDb() {
     if (bars.length < 2) continue;
     const { src, sym } = route(w.ticker);
     // Valuta staat niet in de prices-tabel; leiden we af uit de bron.
-    const currency = src === 'td' ? 'USD' : src === 'moex' ? 'RUB' : guessCurrency(sym);
+    let currency = src === 'td' ? 'USD' : src === 'moex' ? 'RUB' : guessCurrency(sym);
+    let price = bars[0].close;
+    let rate = null;
+    // Roebels meteen omrekenen met de opgeslagen wisselkoers, zodat Ozon ook
+    // bij het opstarten in euro staat i.p.v. tot de eerste live ronde in ₽.
+    if (currency === 'RUB' && (rate = fxRate())) { price = bars[0].close / rate; currency = 'EUR'; }
     SNAPSHOT.set(w.ticker, {
       ticker: w.ticker,
-      price: bars[0].close,
+      price,
       prev_close: bars[1].close,
       currency,
       deltas: {
@@ -342,6 +393,7 @@ function hydrateFromDb() {
         d63: deltaBars(bars, 63),
         ytd: deltaYTD(bars),
       },
+      spark: sparkFrom(bars, rate),
       error: null,
       ts: Date.now(),
     });

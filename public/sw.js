@@ -11,8 +11,8 @@
  * de oude cache en fetchen clients de nieuwe versie.
  */
 
-// v3: fase 5 — compacte koersentabel (app.js + styles.css gewijzigd).
-const CACHE_VERSION = 'janapp-v3';
+// v4: leesbare koppen (1d/1w/1m/3m/YTD) + sparkline terug.
+const CACHE_VERSION = 'janapp-v4';
 const STATIC_ASSETS = [
   '/',
   '/index.html',

@@ -162,6 +162,10 @@ body[data-view="chat"] #chat-view {
 .q-err { color: #dc2626; font-size: 0.7rem; }
 .q-load { color: var(--muted); font-size: 0.7rem; }
 
+/* Sparkline-kolom: smal, lijn hangt rechts uitgelijnd in de cel. */
+.q-spark { width: 72px; padding-left: 4px; padding-right: 8px; }
+.q-spark .spark { display: block; margin-left: auto; }
+
 /* Op smalle schermen alleen de belangrijkste kolommen. */
 @media (max-width: 700px) {
   .quotes-table .q-hide-sm { display: none; }
