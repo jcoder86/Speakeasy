@@ -347,6 +347,66 @@ body[data-view="chat"] #chat-view {
   -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
 }
+/* Headlines: samenvatting korter houden zodat het compact blijft. */
+.news-item.headline .news-summary { -webkit-line-clamp: 2; }
+
+/* Meerdere aandeel-chips rechts uitgelijnd. */
+.news-tickers { margin-left: auto; display: inline-flex; gap: 3px; }
+.news-tickers .news-ticker { margin-left: 0; }
+.news-ticker-more { background: transparent; color: var(--muted); border-color: var(--border); }
+
+/* Compacte titel-regels met fold-out. */
+.news-rows {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--surface);
+}
+.news-row { border-top: 1px solid var(--border); }
+.news-row:first-child { border-top: 0; }
+.news-row-head {
+  width: 100%;
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 7px 10px;
+  background: none;
+  border: 0;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  color: var(--text);
+}
+.news-row-head:hover { background: color-mix(in srgb, var(--accent) 6%, transparent); }
+.news-caret {
+  color: var(--muted);
+  font-size: 0.7rem;
+  line-height: 1.4;
+  transition: transform 0.15s ease;
+  flex: none;
+}
+.news-row.open .news-caret { transform: rotate(90deg); }
+.news-row-title {
+  font-size: 0.85rem;
+  line-height: 1.35;
+  font-weight: 500;
+}
+.news-fold {
+  display: none;
+  padding: 0 10px 9px 22px;
+}
+.news-row.open .news-fold { display: block; }
+.news-fold .news-summary { -webkit-line-clamp: 5; margin-bottom: 6px; }
+.news-more {
+  display: inline-block;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--accent);
+  text-decoration: none;
+}
+.news-more:hover { text-decoration: underline; }
 
 /* Chat: berichten scrollen, composer blijft onderin */
 #chat-view { overflow: hidden; }

@@ -230,7 +230,8 @@ function deltaYTD(bars) {
    de lijn in dezelfde eenheid staat. De vorm blijft identiek — alleen de schaal
    verschilt, en de sparkline is toch schaalloos. */
 function sparkFrom(bars, rate) {
-  const closes = bars.slice(0, 30).reverse().map((b) => b.close);
+  // ~3 maanden (63 beursdagen), oud->nieuw. Past bij de "3 mnd"-kolomkop.
+  const closes = bars.slice(0, 63).reverse().map((b) => b.close);
   if (rate) return closes.map((c) => c / rate);
   return closes;
 }

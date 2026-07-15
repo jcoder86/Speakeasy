@@ -464,26 +464,62 @@ async function fetchTickerNews(ticker, apiKey) {
   }
 }
 
+const STOCK_NEWS_MAX = 18;
+// Titel normaliseren voor dedup: dezelfde kop van een ander persbureau (of onder
+// een ander aandeel) telt als één artikel. Álle niet-alfanumerieke tekens weg
+// (incl. spaties/leestekens), zodat "S&P500" en "S&P 500!" ook samenvallen.
+const normTitle = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 60);
+
 app.get('/api/news/stocks', async (req, res) => {
   const apiKey = process.env.FINNHUB_API_KEY;
   if (!apiKey) return res.json({ items: [] });
-  const list = db.prepare('SELECT * FROM watchlist ORDER BY added_at ASC').all();
-  const items = [];
+  const list = db.prepare(`SELECT * FROM watchlist ${WATCHLIST_ORDER}`).all();
+
+  // Globaal ontdubbelen op url + genormaliseerde titel; per uniek artikel
+  // onthouden bij hoevéél van je aandelen het hoort (= relevantie-signaal).
+  const byKey = new Map();
   for (const w of list) {
     const news = await fetchTickerNews(w.ticker, apiKey);
     for (const n of news) {
-      items.push({
-        id: `${w.ticker}-${n.id}`,
-        ticker: w.ticker,
-        title: n.headline || '(geen titel)',
-        summary: n.summary || '',
-        source: n.source || '',
-        url: n.url,
-        published_at: (typeof n.datetime === 'number' ? n.datetime : 0) * 1000,
-      });
+      if (!n.url) continue;
+      const key = normTitle(n.headline) || n.url;
+      let e = byKey.get(key);
+      if (!e) {
+        e = {
+          title: n.headline || '(geen titel)',
+          summary: n.summary || '',
+          source: n.source || '',
+          url: n.url,
+          published_at: (typeof n.datetime === 'number' ? n.datetime : 0) * 1000,
+          tickers: new Set(),
+        };
+        byKey.set(key, e);
+      } else if (!e.summary && n.summary) {
+        e.summary = n.summary;
+      }
+      e.tickers.add(w.ticker);
     }
   }
-  items.sort((a, b) => b.published_at - a.published_at);
+
+  // Score = portfolio-relevantie (aantal eigen aandelen) + versheid.
+  const now = Date.now();
+  const recency = (ts) => {
+    const h = (now - ts) / 3.6e6;
+    return h < 6 ? 3 : h < 24 ? 2 : h < 72 ? 1 : 0;
+  };
+  const items = [...byKey.values()]
+    .map((e) => ({
+      title: e.title,
+      summary: e.summary,
+      source: e.source,
+      url: e.url,
+      published_at: e.published_at,
+      tickers: [...e.tickers],
+      score: e.tickers.size + recency(e.published_at),
+    }))
+    .sort((a, b) => b.score - a.score || b.published_at - a.published_at)
+    .slice(0, STOCK_NEWS_MAX);
+
   res.json({ items });
 });
 

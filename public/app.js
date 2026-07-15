@@ -393,7 +393,7 @@ function deltaCell(row, value, extraClass) {
 // Compacte sparkline als inline-SVG. Kleur volgt de trend (groen op/rood neer),
 // zodat hij aansluit bij de percentages ernaast.
 const SVG_NS = 'http://www.w3.org/2000/svg';
-function sparklineSvg(closes, trend) {
+function sparklineSvg(closes) {
   const w = 120;
   const h = 22;
   const pad = 2;
@@ -421,8 +421,9 @@ function sparklineSvg(closes, trend) {
   line.setAttribute('stroke-width', '1.4');
   line.setAttribute('stroke-linejoin', 'round');
   line.setAttribute('stroke-linecap', 'round');
-  const up = trend == null ? null : trend >= 0;
-  line.setAttribute('stroke', up === null ? '#94a3b8' : up ? '#16a34a' : '#dc2626');
+  // Kleur volgt de eigen periode: eind hoger dan begin = groen.
+  const up = closes[closes.length - 1] >= closes[0];
+  line.setAttribute('stroke', up ? '#16a34a' : '#dc2626');
   svg.appendChild(line);
   return svg;
 }
@@ -448,7 +449,7 @@ function renderQuotesStrip() {
   for (const [label, cls] of [
     ['Naam', ''], ['Koers', ''], ['1d', ''], ['1w', ''],
     ['1m', 'q-hide-sm'], ['3m', 'q-hide-sm'], ['YTD', 'q-hide-sm'],
-    ['', 'q-hide-sm q-spark'], // sparkline-kolom, geen kop nodig
+    ['3 mnd', 'q-hide-sm q-spark'], // periode van de sparkline
   ]) {
     const th = document.createElement('th');
     th.textContent = label;
@@ -532,7 +533,7 @@ function renderQuotesStrip() {
       // sparkline (30 handelsdagen), kleur volgt de 1m-trend
       const sp = document.createElement('td');
       sp.className = 'q-hide-sm q-spark';
-      sp.appendChild(sparklineSvg(q.spark, q.deltas.d21));
+      sp.appendChild(sparklineSvg(q.spark));
       row.appendChild(sp);
     } else {
       const td = document.createElement('td');
@@ -743,10 +744,8 @@ function relTime(ms) {
   return new Date(ms).toLocaleDateString('nl-NL', { day: 'numeric', month: 'short' });
 }
 
-function buildNewsItem(item, withTicker) {
-  const el = document.createElement('article');
-  el.className = 'news-item';
-
+// Meta-regel: bron · tijd, en rechts de aandeel-chips (max 2, dan +N).
+function buildNewsMeta(item, withTicker) {
   const meta = document.createElement('div');
   meta.className = 'news-meta';
   if (item.source) {
@@ -761,13 +760,32 @@ function buildNewsItem(item, withTicker) {
     t.textContent = relTime(item.published_at);
     meta.appendChild(t);
   }
-  if (withTicker && item.ticker) {
-    const chip = document.createElement('span');
-    chip.className = 'news-ticker';
-    chip.textContent = item.ticker;
-    meta.appendChild(chip);
+  const tickers = withTicker ? (item.tickers || (item.ticker ? [item.ticker] : [])) : [];
+  if (tickers.length) {
+    const wrap = document.createElement('span');
+    wrap.className = 'news-tickers';
+    tickers.slice(0, 2).forEach((tk) => {
+      const chip = document.createElement('span');
+      chip.className = 'news-ticker';
+      chip.textContent = tk;
+      wrap.appendChild(chip);
+    });
+    if (tickers.length > 2) {
+      const more = document.createElement('span');
+      more.className = 'news-ticker news-ticker-more';
+      more.textContent = `+${tickers.length - 2}`;
+      wrap.appendChild(more);
+    }
+    meta.appendChild(wrap);
   }
-  el.appendChild(meta);
+  return meta;
+}
+
+// Headline: volledige kaart met zichtbare (ingekorte) samenvatting.
+function buildHeadline(item, withTicker) {
+  const el = document.createElement('article');
+  el.className = 'news-item headline';
+  el.appendChild(buildNewsMeta(item, withTicker));
 
   const title = document.createElement('h4');
   title.className = 'news-title';
@@ -789,6 +807,48 @@ function buildNewsItem(item, withTicker) {
   return el;
 }
 
+// Compacte regel: alleen de titel; klik vouwt op de pagina zelf uit naar
+// samenvatting + "Lees verder" naar het bronartikel.
+function buildNewsRow(item, withTicker) {
+  const el = document.createElement('div');
+  el.className = 'news-row';
+
+  const head = document.createElement('button');
+  head.type = 'button';
+  head.className = 'news-row-head';
+  const caret = document.createElement('span');
+  caret.className = 'news-caret';
+  caret.textContent = '▸';
+  const ttl = document.createElement('span');
+  ttl.className = 'news-row-title';
+  ttl.textContent = item.title || '(geen titel)';
+  head.appendChild(caret);
+  head.appendChild(ttl);
+
+  const fold = document.createElement('div');
+  fold.className = 'news-fold';
+  fold.appendChild(buildNewsMeta(item, withTicker));
+  const summary = item.summary_nl || item.summary;
+  if (summary) {
+    const p = document.createElement('p');
+    p.className = 'news-summary';
+    p.textContent = summary;
+    fold.appendChild(p);
+  }
+  const more = document.createElement('a');
+  more.className = 'news-more';
+  more.href = item.url;
+  more.target = '_blank';
+  more.rel = 'noopener noreferrer';
+  more.textContent = 'Lees verder →';
+  fold.appendChild(more);
+
+  head.addEventListener('click', () => el.classList.toggle('open'));
+  el.appendChild(head);
+  el.appendChild(fold);
+  return el;
+}
+
 function renderNewsList(listEl, emptyEl, items, opts = {}) {
   listEl.innerHTML = '';
   const arr = Array.isArray(items) ? items : [];
@@ -798,7 +858,19 @@ function renderNewsList(listEl, emptyEl, items, opts = {}) {
     return;
   }
   emptyEl.hidden = true;
-  for (const item of arr) listEl.appendChild(buildNewsItem(item, opts.withTicker));
+
+  const headlineCount = opts.headlines ?? 3;
+  const heads = arr.slice(0, headlineCount);
+  const rest = arr.slice(headlineCount);
+
+  for (const item of heads) listEl.appendChild(buildHeadline(item, opts.withTicker));
+
+  if (rest.length) {
+    const rows = document.createElement('div');
+    rows.className = 'news-rows';
+    for (const item of rest) rows.appendChild(buildNewsRow(item, opts.withTicker));
+    listEl.appendChild(rows);
+  }
 }
 
 async function loadStockNews() {
