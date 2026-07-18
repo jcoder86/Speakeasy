@@ -10,91 +10,174 @@
   <link rel="icon" type="image/png" href="/icon-192.png" />
   <title>JanApp</title>
   <link rel="stylesheet" href="styles.css" />
+  <script>
+    // Vóór CSS-paint het onthouden thema zetten, anders flitst de pagina
+    // eerst licht op om daarna naar donker om te slaan.
+    (function () {
+      try {
+        var t = localStorage.getItem('janapp-theme');
+        if (t === 'dark' || t === 'light') document.documentElement.dataset.theme = t;
+      } catch (e) { /* localStorage kan geblokkeerd zijn — dan gewoon systeemvoorkeur */ }
+    })();
+  </script>
 </head>
-<body data-view="feed">
-  <header id="app-header">
-    <h1>JanApp</h1>
-    <nav id="desktop-nav">
-      <button class="nav-btn" data-view-target="feed" type="button">Dashboard</button>
-      <button class="nav-btn" data-view-target="chat" type="button">Chat</button>
-    </nav>
-  </header>
+<body data-view="home">
+  <div class="app-shell">
+    <aside id="sidebar">
+      <div class="sidebar-brand">
+        <span class="brand-mark">J</span>
+        <span class="brand-name">JanApp</span>
+      </div>
 
-  <main>
-    <section id="feed-view" class="view">
-      <div id="quotes-status" class="muted-hint" hidden></div>
-      <div id="quotes-strip"></div>
-      <details id="watchlist-manager">
-        <summary>Watchlist beheren</summary>
-        <div id="watchlist-list"></div>
-        <form id="watchlist-add-form">
-          <input id="watchlist-ticker" type="text" placeholder="Ticker (bv AAPL)" maxlength="12" autocomplete="off" />
-          <input id="watchlist-name" type="text" placeholder="Naam (optioneel)" maxlength="60" autocomplete="off" />
-          <button type="submit">Toevoegen</button>
-        </form>
-      </details>
+      <nav id="sidebar-nav">
+        <button class="nav-btn" data-view-target="home" type="button">Home</button>
+        <button class="nav-btn" data-view-target="portfolio" type="button">Portfolio</button>
+        <button class="nav-btn" data-view-target="aandelen" type="button">Aandelen</button>
+        <button class="nav-btn" data-view-target="marktnieuws" type="button">Marktnieuws</button>
+        <button class="nav-btn" data-view-target="agenda" type="button">Agenda</button>
+        <button class="nav-btn" data-view-target="todo" type="button">To-do's</button>
+        <button class="nav-btn" data-view-target="watchlist" type="button">Watchlist</button>
+        <button class="nav-btn" data-view-target="chat" type="button">Chat</button>
+        <button class="nav-btn" data-view-target="tools" type="button">Tools</button>
+        <button class="nav-btn" data-view-target="instellingen" type="button">Instellingen</button>
+      </nav>
 
-      <section class="news-block">
-        <h3 class="news-heading">Mijn aandelen</h3>
-        <div id="news-stocks-list" class="news-list"></div>
-        <p id="news-stocks-empty" class="muted-hint">Nog geen nieuws voor je watchlist.</p>
-      </section>
+      <div class="sidebar-footer">
+        <div id="market-status">
+          <span id="market-status-dot" class="status-dot"></span>
+          <span id="market-status-text">Markt onbekend</span>
+        </div>
+        <div id="quotes-updated-text" class="sidebar-hint"></div>
+        <button id="theme-toggle" type="button">🌙 Dark mode</button>
+      </div>
+    </aside>
 
-      <section class="news-block">
-        <h3 class="news-heading">Macro &amp; AI</h3>
-        <div id="news-feed-list" class="news-list"></div>
-        <p id="news-feed-empty" class="muted-hint">Pipeline nog niet actief.</p>
-      </section>
-    </section>
+    <div class="app-main">
+      <main>
+        <section id="home-view" class="view">
+          <div class="feed-placeholder">
+            <h2>Home</h2>
+            <p>Dashboardcompositie volgt in fase 7.</p>
+          </div>
+        </section>
 
-    <section id="todo-view" class="view">
-      <form id="todo-add-form">
-        <input id="todo-add-input" type="text" placeholder="Nieuwe to-do…" maxlength="500" autocomplete="off" />
-        <button id="todo-add-btn" type="submit" aria-label="Voeg to-do toe">+</button>
-      </form>
+        <section id="portfolio-view" class="view placeholder-view">
+          <div class="feed-placeholder">
+            <h2>Portfolio</h2>
+            <p>Komt in een latere fase: eigen holdings (aantal + aankoopprijs) met echt rendement.</p>
+          </div>
+        </section>
 
-      <div id="filter-bar">
-        <div id="filter-chips"></div>
-        <button id="filter-clear" type="button" hidden>Wis filter</button>
-        <details id="label-manager">
-          <summary>Labels beheren</summary>
+        <section id="aandelen-view" class="view">
+          <div id="quotes-status" class="muted-hint" hidden></div>
+          <div id="quotes-strip"></div>
+          <button id="aandelen-to-watchlist" class="link-btn" type="button">Beheer je watchlist →</button>
+        </section>
+
+        <section id="marktnieuws-view" class="view">
+          <section class="news-block">
+            <h3 class="news-heading">Mijn aandelen</h3>
+            <div id="news-stocks-list" class="news-list"></div>
+            <p id="news-stocks-empty" class="muted-hint">Nog geen nieuws voor je watchlist.</p>
+          </section>
+
+          <section class="news-block">
+            <h3 class="news-heading">Macro &amp; AI</h3>
+            <div id="news-feed-list" class="news-list"></div>
+            <p id="news-feed-empty" class="muted-hint">Pipeline nog niet actief.</p>
+          </section>
+        </section>
+
+        <section id="agenda-view" class="view placeholder-view">
+          <div class="feed-placeholder">
+            <h2>Agenda</h2>
+            <p>Komt in een latere fase: koppeling met Google Calendar.</p>
+          </div>
+        </section>
+
+        <section id="todo-view" class="view">
+          <form id="todo-add-form">
+            <input id="todo-add-input" type="text" placeholder="Nieuwe to-do…" maxlength="500" autocomplete="off" />
+            <button id="todo-add-btn" type="submit" aria-label="Voeg to-do toe">+</button>
+          </form>
+
+          <div id="filter-bar">
+            <div id="filter-chips"></div>
+            <button id="filter-clear" type="button" hidden>Wis filter</button>
+          </div>
+
+          <div id="todos" class="list"></div>
+          <p id="todo-empty" class="empty-hint">Nog geen to-do's.</p>
+
+          <details id="done-section">
+            <summary>Afgerond (<span id="done-count">0</span>)</summary>
+            <div id="done-todos" class="list"></div>
+          </details>
+        </section>
+
+        <section id="watchlist-view" class="view">
+          <h2 class="page-heading">Watchlist beheren</h2>
+          <div id="watchlist-list"></div>
+          <form id="watchlist-add-form">
+            <input id="watchlist-ticker" type="text" placeholder="Ticker (bv AAPL)" maxlength="12" autocomplete="off" />
+            <input id="watchlist-name" type="text" placeholder="Naam (optioneel)" maxlength="60" autocomplete="off" />
+            <button type="submit">Toevoegen</button>
+          </form>
+        </section>
+
+        <section id="chat-view" class="view">
+          <div id="messages" class="list"></div>
+          <form id="composer">
+            <textarea id="input" rows="1" autofocus placeholder="Typ een bericht…"></textarea>
+            <input id="image-input" type="file" accept="image/png,image/jpeg,image/gif,image/webp" hidden />
+            <div class="composer-buttons">
+              <button id="upload-btn" type="button">Afbeelding</button>
+              <button id="addtodo-btn" type="button">Add to-do</button>
+              <button id="send-btn" type="submit">Send</button>
+            </div>
+          </form>
+        </section>
+
+        <section id="tools-view" class="view placeholder-view">
+          <div class="feed-placeholder">
+            <h2>Tools</h2>
+            <p>Nog te bepalen wat hierin komt.</p>
+          </div>
+        </section>
+
+        <section id="instellingen-view" class="view">
+          <h2 class="page-heading">Labels beheren</h2>
           <div id="label-mgmt-list"></div>
           <form id="new-label-form">
             <input id="new-label-name" type="text" placeholder="Labelnaam" maxlength="40" autocomplete="off" />
             <input id="new-label-color" type="color" value="#3b82f6" aria-label="Kleur" />
             <button type="submit">Toevoegen</button>
           </form>
-        </details>
-      </div>
+        </section>
 
-      <div id="todos" class="list"></div>
-      <p id="todo-empty" class="empty-hint">Nog geen to-do's.</p>
+        <section id="meer-view" class="view">
+          <h2 class="page-heading">Meer</h2>
+          <div class="meer-list">
+            <button class="nav-btn meer-link" data-view-target="portfolio" type="button">Portfolio</button>
+            <button class="nav-btn meer-link" data-view-target="marktnieuws" type="button">Marktnieuws</button>
+            <button class="nav-btn meer-link" data-view-target="agenda" type="button">Agenda</button>
+            <button class="nav-btn meer-link" data-view-target="watchlist" type="button">Watchlist</button>
+            <button class="nav-btn meer-link" data-view-target="tools" type="button">Tools</button>
+            <button class="nav-btn meer-link" data-view-target="instellingen" type="button">Instellingen</button>
+          </div>
+          <button id="theme-toggle-mobile" type="button">🌙 Dark mode</button>
+        </section>
+      </main>
 
-      <details id="done-section">
-        <summary>Afgerond (<span id="done-count">0</span>)</summary>
-        <div id="done-todos" class="list"></div>
-      </details>
-    </section>
-
-    <section id="chat-view" class="view">
-      <div id="messages" class="list"></div>
-      <form id="composer">
-        <textarea id="input" rows="1" autofocus placeholder="Typ een bericht…"></textarea>
-        <input id="image-input" type="file" accept="image/png,image/jpeg,image/gif,image/webp" hidden />
-        <div class="composer-buttons">
-          <button id="upload-btn" type="button">Afbeelding</button>
-          <button id="addtodo-btn" type="button">Add to-do</button>
-          <button id="send-btn" type="submit">Send</button>
-        </div>
-      </form>
-    </section>
-  </main>
-
-  <nav id="mobile-nav">
-    <button class="nav-btn" data-view-target="feed" type="button">Feed</button>
-    <button class="nav-btn" data-view-target="todo" type="button">To-do</button>
-    <button class="nav-btn" data-view-target="chat" type="button">Chat</button>
-  </nav>
+      <nav id="mobile-nav">
+        <button class="nav-btn" data-view-target="home" type="button">Home</button>
+        <button class="nav-btn" data-view-target="aandelen" type="button">Aandelen</button>
+        <button class="nav-btn" data-view-target="todo" type="button">To-do</button>
+        <button class="nav-btn" data-view-target="chat" type="button">Chat</button>
+        <button class="nav-btn" data-view-target="meer" type="button">Meer</button>
+      </nav>
+    </div>
+  </div>
 
   <div id="lightbox" class="lightbox" hidden>
     <img id="lightbox-img" alt="Afbeelding op volledig formaat" />

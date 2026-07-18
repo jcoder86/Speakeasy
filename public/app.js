@@ -32,6 +32,11 @@ const imageInput = document.getElementById('image-input');
 const lightbox = document.getElementById('lightbox');
 const lightboxImg = document.getElementById('lightbox-img');
 const navButtons = document.querySelectorAll('.nav-btn');
+const themeToggle = document.getElementById('theme-toggle');
+const themeToggleMobile = document.getElementById('theme-toggle-mobile');
+const marketStatusDot = document.getElementById('market-status-dot');
+const marketStatusText = document.getElementById('market-status-text');
+const quotesUpdatedText = document.getElementById('quotes-updated-text');
 
 // Client-side caches (id -> object).
 const messages = new Map();
@@ -74,24 +79,78 @@ function makeBtn(label, onClick) {
   return b;
 }
 
-/* ---------- View-toggle (tabs) ---------- */
-// Drie tabs: feed | todo | chat. Op mobiel is er per data-view één view
-// zichtbaar; op desktop toont de "Dashboard"-knop (target: feed) zowel
-// feed als to-do naast elkaar — de CSS regelt dat via [data-view].
+/* ---------- View-routing (sidebar / bottom-nav / meer-overflow) ---------- */
+// Elke pagina is een eigen <section class="view" id="<naam>-view">. Precies
+// één krijgt .view-active; alle nav-knoppen delen dezelfde class + attribuut,
+// ongeacht of ze in de sidebar, de mobile-nav of het meer-overzicht staan.
 function setView(view) {
   document.body.dataset.view = view;
+  for (const el of document.querySelectorAll('.view')) {
+    el.classList.toggle('view-active', el.id === `${view}-view`);
+  }
   for (const btn of navButtons) {
-    const t = btn.dataset.viewTarget;
-    const isDesktopBtn = btn.closest('#desktop-nav') !== null;
-    // Desktop "Dashboard"-knop (target=feed) blijft ook actief bij view=todo.
-    const active = t === view || (isDesktopBtn && t === 'feed' && view === 'todo');
-    btn.classList.toggle('active', active);
+    btn.classList.toggle('active', btn.dataset.viewTarget === view);
   }
   if (view === 'chat') input.focus();
 }
 
 for (const btn of navButtons) {
   btn.addEventListener('click', () => setView(btn.dataset.viewTarget));
+}
+
+document.getElementById('aandelen-to-watchlist').addEventListener('click', () => setView('watchlist'));
+
+/* ---------- Dark mode ---------- */
+const THEME_KEY = 'janapp-theme';
+
+function applyTheme(theme) {
+  document.documentElement.dataset.theme = theme;
+  try { localStorage.setItem(THEME_KEY, theme); } catch { /* privé-modus o.i.d. */ }
+  const label = theme === 'dark' ? '☀️ Light mode' : '🌙 Dark mode';
+  for (const btn of [themeToggle, themeToggleMobile]) if (btn) btn.textContent = label;
+}
+
+function currentTheme() {
+  const stored = document.documentElement.dataset.theme;
+  if (stored === 'dark' || stored === 'light') return stored;
+  return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+}
+
+function toggleTheme() {
+  applyTheme(currentTheme() === 'dark' ? 'light' : 'dark');
+}
+
+applyTheme(currentTheme()); // knop-label meteen kloppend zetten
+themeToggle.addEventListener('click', toggleTheme);
+themeToggleMobile.addEventListener('click', toggleTheme);
+
+/* ---------- Markt-status (VS-beurstijden) + "data bijgewerkt" ---------- */
+// De watchlist bestrijkt meerdere beurzen; één harde open/dicht-indicator kan
+// dus niet voor allemaal kloppen. We tonen de Amerikaanse markt (grootste deel
+// van de meeste watchlists) en zijn daar expliciet over via het label.
+function usMarketOpenNow() {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York', hour12: false,
+    weekday: 'short', hour: '2-digit', minute: '2-digit',
+  }).formatToParts(new Date());
+  const get = (t) => parts.find((p) => p.type === t)?.value;
+  const weekday = get('weekday');
+  const minutes = parseInt(get('hour'), 10) * 60 + parseInt(get('minute'), 10);
+  const isWeekday = weekday !== 'Sat' && weekday !== 'Sun';
+  return isWeekday && minutes >= 9 * 60 + 30 && minutes < 16 * 60;
+}
+
+function updateMarketStatus() {
+  const open = usMarketOpenNow();
+  marketStatusDot.classList.toggle('open', open);
+  marketStatusText.textContent = open ? 'Markt open (VS)' : 'Markt dicht (VS)';
+
+  if (quotesCache.ts) {
+    const mins = Math.max(0, Math.round((Date.now() - quotesCache.ts) / 60000));
+    quotesUpdatedText.textContent = mins < 1 ? 'Data bijgewerkt: net' : `Data bijgewerkt: ${mins}m geleden`;
+  } else {
+    quotesUpdatedText.textContent = '';
+  }
 }
 
 /* ===================================================================
@@ -694,6 +753,7 @@ async function loadQuotes() {
     quotesStatusEl.hidden = false;
     quotesStatusEl.textContent = 'Kon koersen niet ophalen.';
   }
+  updateMarketStatus();
 }
 
 watchlistAddForm.addEventListener('submit', async (e) => {
@@ -1392,13 +1452,16 @@ loadWatchlist().then(loadQuotes);
 loadStockNews();
 loadFeedNews();
 connectSSE();
-setView('feed'); // default: dashboard/feed
+setView('home'); // default: dashboard/home
 
 // Koersen elke 60s (matcht server-cache).
 setInterval(loadQuotes, 60 * 1000);
 // Nieuws elke 15 min (matcht server-cache 15 min).
 setInterval(loadStockNews, 15 * 60 * 1000);
 setInterval(loadFeedNews, 15 * 60 * 1000);
+// Markt-status/"bijgewerkt"-tekst tikt door, ook zonder nieuwe koersdata.
+updateMarketStatus();
+setInterval(updateMarketStatus, 30 * 1000);
 
 /* ---------- PWA service worker ---------- */
 if ('serviceWorker' in navigator) {
