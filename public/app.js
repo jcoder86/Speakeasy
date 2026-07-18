@@ -37,6 +37,15 @@ const themeToggleMobile = document.getElementById('theme-toggle-mobile');
 const marketStatusDot = document.getElementById('market-status-dot');
 const marketStatusText = document.getElementById('market-status-text');
 const quotesUpdatedText = document.getElementById('quotes-updated-text');
+const kpiTodosValueEl = document.getElementById('kpi-todos-value');
+const homeStocksExcerptEl = document.getElementById('home-stocks-excerpt');
+const homeMoversEl = document.getElementById('home-movers');
+const homeNewsStocksEl = document.getElementById('home-news-stocks');
+const homeNewsFeedEl = document.getElementById('home-news-feed');
+const homeTodosListEl = document.getElementById('home-todos-list');
+const homeTodosEmptyEl = document.getElementById('home-todos-empty');
+const homeTodoAddForm = document.getElementById('home-todo-add-form');
+const homeTodoAddInput = document.getElementById('home-todo-add-input');
 
 // Client-side caches (id -> object).
 const messages = new Map();
@@ -94,11 +103,12 @@ function setView(view) {
   if (view === 'chat') input.focus();
 }
 
-for (const btn of navButtons) {
-  btn.addEventListener('click', () => setView(btn.dataset.viewTarget));
+// Breder dan alleen .nav-btn: ook de kleine "Bekijk alles →"-linkjes in de
+// Home-widgets hebben data-view-target, maar tellen niet mee als persistente
+// tab (die "active"-status blijft beperkt tot .nav-btn, zie setView hierboven).
+for (const el of document.querySelectorAll('[data-view-target]')) {
+  el.addEventListener('click', () => setView(el.dataset.viewTarget));
 }
-
-document.getElementById('aandelen-to-watchlist').addEventListener('click', () => setView('watchlist'));
 
 /* ---------- Dark mode ---------- */
 const THEME_KEY = 'janapp-theme';
@@ -488,6 +498,10 @@ function sparklineSvg(closes) {
 }
 
 function renderQuotesStrip() {
+  // Home-excerpt (aandelen + movers) leest dezelfde watchlist/quotesCache,
+  // dus hier centraal aanroepen dekt alle call-sites in één keer.
+  renderHomeStocksAndMovers();
+
   quotesStripEl.innerHTML = '';
   const quotesById = new Map(quotesCache.quotes.map((q) => [q.ticker, q]));
   if (watchlist.size === 0) {
@@ -933,15 +947,24 @@ function renderNewsList(listEl, emptyEl, items, opts = {}) {
   }
 }
 
+// Laatst opgehaalde items, zodat de Home-excerpts (top 3) dezelfde data
+// hergebruiken zonder een tweede fetch te doen.
+let lastStockNews = [];
+let lastFeedNews = [];
+
 async function loadStockNews() {
   try {
     const res = await fetch('/api/news/stocks');
     if (!res.ok) {
       renderNewsList(newsStocksListEl, newsStocksEmptyEl, [], { reason: 'Nieuws niet beschikbaar.' });
+      lastStockNews = [];
+      renderHomeNews();
       return;
     }
     const data = await res.json();
+    lastStockNews = Array.isArray(data.items) ? data.items : [];
     renderNewsList(newsStocksListEl, newsStocksEmptyEl, data.items, { withTicker: true });
+    renderHomeNews();
   } catch {
     /* stille fallback */
   }
@@ -952,16 +975,178 @@ async function loadFeedNews() {
     const res = await fetch('/api/news/feed');
     if (!res.ok) {
       renderNewsList(newsFeedListEl, newsFeedEmptyEl, [], { reason: 'Feed niet bereikbaar.' });
+      lastFeedNews = [];
+      renderHomeNews();
       return;
     }
     const data = await res.json();
+    lastFeedNews = Array.isArray(data.items) ? data.items : [];
     renderNewsList(newsFeedListEl, newsFeedEmptyEl, data.items, {
       reason: data.reason || 'Pipeline nog niet actief.',
     });
+    renderHomeNews();
   } catch {
     /* stille fallback */
   }
 }
+
+/* ===================================================================
+   HOME-DASHBOARD (excerpts van bovenstaande + to-do's)
+   =================================================================== */
+const HOME_STOCK_ROWS = 6;
+const HOME_MOVERS_COUNT = 3;
+const HOME_NEWS_COUNT = 3;
+const HOME_TODO_ROWS = 5;
+
+// Compacte rij: ticker + naam + koers + 1d-delta. Geen groepskopjes/sparkline
+// — dat is precies waarom dit een "excerpt" is, de volledige tabel staat op
+// de Aandelen-pagina.
+function renderHomeStocksAndMovers() {
+  if (!homeStocksExcerptEl) return;
+  const quotesById = new Map(quotesCache.quotes.map((q) => [q.ticker, q]));
+  const items = [...watchlist.values()];
+
+  homeStocksExcerptEl.innerHTML = '';
+  if (items.length === 0) {
+    const p = document.createElement('p');
+    p.className = 'muted-hint';
+    p.textContent = 'Nog geen tickers — voeg er een toe via Watchlist.';
+    homeStocksExcerptEl.appendChild(p);
+  } else {
+    const table = document.createElement('table');
+    table.className = 'quotes-table home-quotes-table';
+    const tbody = document.createElement('tbody');
+    for (const item of items.slice(0, HOME_STOCK_ROWS)) {
+      const q = quotesById.get(item.ticker);
+      const row = document.createElement('tr');
+      const nameTd = document.createElement('td');
+      const wrap = document.createElement('div');
+      wrap.className = 'q-name';
+      const sym = document.createElement('span');
+      sym.className = 'q-sym';
+      sym.textContent = item.ticker;
+      wrap.appendChild(sym);
+      nameTd.appendChild(wrap);
+      row.appendChild(nameTd);
+      if (q && q.price !== null && q.price !== undefined) {
+        cell(row, priceStr(q.price, q.currency), 'q-price');
+        deltaCell(row, q.deltas.d1, 'q-d1');
+      } else {
+        const td = document.createElement('td');
+        td.colSpan = 2;
+        td.className = 'q-load';
+        td.textContent = q && q.error ? '—' : 'laden…';
+        row.appendChild(td);
+      }
+      tbody.appendChild(row);
+    }
+    table.appendChild(tbody);
+    homeStocksExcerptEl.appendChild(table);
+  }
+
+  // Biggest movers — binnen de watchlist (zie plan: bredere movers-universe
+  // volgt in fase 10). Sorteert op 1d-delta, alleen tickers met bekende koers.
+  homeMoversEl.innerHTML = '';
+  const withDelta = [...quotesById.values()].filter(
+    (q) => q && q.price !== null && typeof q.deltas?.d1 === 'number',
+  );
+  if (withDelta.length === 0) {
+    const p = document.createElement('p');
+    p.className = 'muted-hint';
+    p.textContent = 'Nog geen koersdata voor movers.';
+    homeMoversEl.appendChild(p);
+  } else {
+    const gainers = [...withDelta].sort((a, b) => b.deltas.d1 - a.deltas.d1).slice(0, HOME_MOVERS_COUNT);
+    const losers = [...withDelta].sort((a, b) => a.deltas.d1 - b.deltas.d1).slice(0, HOME_MOVERS_COUNT);
+    const grid = document.createElement('div');
+    grid.className = 'movers-grid';
+    grid.appendChild(buildMoversList('Grootste stijgers', gainers));
+    grid.appendChild(buildMoversList('Grootste dalers', losers));
+    homeMoversEl.appendChild(grid);
+  }
+}
+
+function buildMoversList(title, list) {
+  const col = document.createElement('div');
+  col.className = 'movers-col';
+  const h = document.createElement('div');
+  h.className = 'movers-col-title';
+  h.textContent = title;
+  col.appendChild(h);
+  for (const q of list) {
+    const row = document.createElement('div');
+    row.className = 'movers-row';
+    const sym = document.createElement('span');
+    sym.className = 'q-sym';
+    sym.textContent = q.ticker;
+    row.appendChild(sym);
+    const d = document.createElement('span');
+    d.className = trendClass(q.deltas.d1);
+    d.textContent = pct(q.deltas.d1);
+    row.appendChild(d);
+    col.appendChild(row);
+  }
+  return col;
+}
+
+function renderHomeNews() {
+  if (!homeNewsStocksEl) return;
+  homeNewsStocksEl.innerHTML = '';
+  if (lastStockNews.length === 0) {
+    const p = document.createElement('p');
+    p.className = 'muted-hint';
+    p.textContent = 'Nog geen nieuws voor je watchlist.';
+    homeNewsStocksEl.appendChild(p);
+  } else {
+    for (const item of lastStockNews.slice(0, HOME_NEWS_COUNT)) {
+      homeNewsStocksEl.appendChild(buildHeadline(item, true));
+    }
+  }
+
+  homeNewsFeedEl.innerHTML = '';
+  if (lastFeedNews.length === 0) {
+    const p = document.createElement('p');
+    p.className = 'muted-hint';
+    p.textContent = 'Pipeline nog niet actief.';
+    homeNewsFeedEl.appendChild(p);
+  } else {
+    for (const item of lastFeedNews.slice(0, HOME_NEWS_COUNT)) {
+      homeNewsFeedEl.appendChild(buildHeadline(item, false));
+    }
+  }
+}
+
+// Simpele open-lijst (geen Vandaag/Later — vervaldatums zijn bewust geskipt).
+function renderHomeTodos() {
+  if (!homeTodosListEl) return;
+  const open = [...todos.values()].filter((t) => !t.done).sort((a, b) => b.id - a.id);
+  kpiTodosValueEl.textContent = String(open.length);
+
+  homeTodosListEl.innerHTML = '';
+  homeTodosEmptyEl.hidden = open.length > 0;
+  for (const todo of open.slice(0, HOME_TODO_ROWS)) {
+    const row = document.createElement('div');
+    row.className = 'home-todo-row';
+    const check = document.createElement('input');
+    check.type = 'checkbox';
+    check.className = 'todo-check';
+    check.addEventListener('change', () => toggleTodo(todo.id, check.checked));
+    row.appendChild(check);
+    const text = document.createElement('span');
+    text.className = 'home-todo-text';
+    text.textContent = todo.text;
+    row.appendChild(text);
+    homeTodosListEl.appendChild(row);
+  }
+}
+
+homeTodoAddForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const text = homeTodoAddInput.value.trim();
+  if (!text) return;
+  const ok = await createTodo(text);
+  if (ok) homeTodoAddInput.value = '';
+});
 
 /* ===================================================================
    TO-DO'S + LABELS
@@ -997,6 +1182,8 @@ function updateEmptyStates() {
   todoEmptyEl.hidden = openCount > 0;
   doneCountEl.textContent = String(doneCount);
   doneSectionEl.hidden = doneCount === 0;
+  // Zelfde hook-punt dekt addTodo/updateTodo (via applyFilter) én removeTodo.
+  renderHomeTodos();
 }
 
 /* ---------- Chip-helper ---------- */

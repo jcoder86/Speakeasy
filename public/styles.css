@@ -146,17 +146,8 @@ main {
 
 .page-heading { font-size: 1.1rem; font-weight: 700; }
 
-.link-btn {
-  align-self: flex-start;
-  min-height: 36px;
-  padding: 0 4px;
-  font-size: 0.85rem;
-  font-weight: 600;
-  color: var(--accent);
-  background: none;
-  border: none;
-}
-.link-btn:hover { text-decoration: underline; }
+/* .link-btn zelf staat gedefinieerd bij Home-dashboard hieronder — dezelfde
+   class wordt ook op de Aandelen-pagina gebruikt ("Beheer je watchlist"). */
 
 .placeholder-view .feed-placeholder { margin: auto; }
 
@@ -475,6 +466,146 @@ main {
   text-decoration: none;
 }
 .news-more:hover { text-decoration: underline; }
+
+/* =====================================================================
+   Home-dashboard: KPI-rij + 3-koloms compositie
+   ===================================================================== */
+.kpi-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.kpi-card {
+  flex: 1 1 150px;
+  min-width: 140px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.kpi-label {
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--muted);
+}
+.kpi-value { font-size: 1.3rem; font-weight: 700; }
+.kpi-placeholder {
+  font-size: 0.8rem;
+  color: var(--muted);
+  font-style: italic;
+}
+
+.link-btn {
+  align-self: flex-start;
+  min-height: 28px;
+  padding: 0 2px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--accent);
+  background: none;
+  border: none;
+}
+.link-btn:hover { text-decoration: underline; }
+
+.home-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.home-col {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+.home-widget {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px;
+}
+.widget-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.widget-head .news-heading { margin-bottom: 0; }
+
+.home-quotes-table { font-size: 0.8rem; }
+.home-quotes-table .q-price { padding-left: 12px; }
+
+.movers-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.movers-col-title {
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+.movers-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 3px 0;
+  font-size: 0.82rem;
+}
+
+#home-todo-add-form {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+#home-todo-add-form input {
+  flex: 1 1 auto;
+  min-height: 40px;
+  padding: 0 10px;
+  font: inherit;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+}
+#home-todo-add-form button {
+  flex: 0 0 auto;
+  min-height: 40px;
+  min-width: 40px;
+  padding: 0 12px;
+  background: var(--accent);
+  color: var(--accent-text);
+  border-color: var(--accent);
+}
+.home-todo-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 2px;
+  border-top: 1px solid var(--border);
+}
+.home-todo-row:first-child { border-top: 0; }
+.home-todo-text {
+  font-size: 0.86rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (min-width: 1024px) {
+  .home-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    align-items: start;
+  }
+}
 
 /* Chat wijkt af van de standaard .view: geen eigen scroll/padding, want
    #messages en #composer regelen dat zelf (composer blijft onderin vast). */
