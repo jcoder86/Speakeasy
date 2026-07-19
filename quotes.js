@@ -41,6 +41,16 @@ const SNAPSHOT = new Map();
 let lastRun = 0;
 let running = false;
 
+/* Extra's buiten de watchlist voor de Home-KPI's (Oil & Gas, Crypto) — geen
+   aandelen, dus niet in "Mijn aandelen" of de watchlist-beheerpagina, maar wel
+   via dezelfde Twelve Data-infrastructuur (credit-poort, dagcandles, deltas,
+   sparkline). Alleen WTI is beschikbaar op dit plan (geen los gas-symbool). */
+const EXTRAS = [
+  { key: 'oil', symbol: 'WTI/USD' },
+  { key: 'crypto', symbol: 'BTC/USD' },
+];
+const EXTRAS_SNAPSHOT = new Map();
+
 /* ---------- prices-tabel (bestaand schema, nu met échte historie) ---------- */
 const upsertPrice = db.prepare(
   `INSERT INTO prices (ticker, date, close) VALUES (?, ?, ?)
@@ -297,10 +307,16 @@ async function refreshAll(broadcast) {
        Data-calls vanzelf, en EODHD/MOEX hebben geen krappe minuutlimiet.
        Zodra een ticker binnen is, ziet de UI 'm — hij hoeft niet op de
        traagste te wachten. */
-    await Promise.all(list.map(async (w) => {
-      await runOne(w.ticker);
-      if (broadcast) broadcast('quotes:update', { generated_at: Date.now() });
-    }));
+    await Promise.all([
+      ...list.map(async (w) => {
+        await runOne(w.ticker);
+        if (broadcast) broadcast('quotes:update', { generated_at: Date.now() });
+      }),
+      ...EXTRAS.map(async (ex) => {
+        await runOneExtra(ex);
+        if (broadcast) broadcast('quotes:update', { generated_at: Date.now() });
+      }),
+    ]);
 
     lastRun = Date.now();
     if (broadcast) broadcast('quotes:update', { generated_at: lastRun });
@@ -340,6 +356,31 @@ async function runOne(ticker, attempt = 0) {
   return undefined;
 }
 
+async function runOneExtra(ex, attempt = 0) {
+  try {
+    EXTRAS_SNAPSHOT.set(ex.key, { ...(await fetchTicker(ex.symbol)), key: ex.key });
+  } catch (err) {
+    const msg = String(err.message || err);
+    if (RATE_LIMIT_RE.test(msg) && attempt < 2) {
+      await sleep(62000);
+      return runOneExtra(ex, attempt + 1);
+    }
+    const prev = EXTRAS_SNAPSHOT.get(ex.key);
+    EXTRAS_SNAPSHOT.set(ex.key, {
+      key: ex.key,
+      ticker: ex.symbol,
+      price: prev?.price ?? null,
+      prev_close: prev?.prev_close ?? null,
+      currency: prev?.currency ?? null,
+      deltas: prev?.deltas ?? { d1: null, d5: null, d21: null, d63: null, ytd: null },
+      spark: prev?.spark ?? null,
+      error: msg.slice(0, 90),
+      ts: Date.now(),
+    });
+  }
+  return undefined;
+}
+
 /* Losse ticker meteen ophalen (bij toevoegen aan de watchlist). */
 async function refreshTicker(ticker, broadcast) {
   await runOne(ticker);
@@ -357,7 +398,14 @@ function snapshot() {
     }
     return { ...s, display_name: w.display_name };
   });
-  return { generated_at: lastRun || Date.now(), quotes };
+  const extras = {};
+  for (const ex of EXTRAS) {
+    extras[ex.key] = EXTRAS_SNAPSHOT.get(ex.key) || {
+      key: ex.key, ticker: ex.symbol, price: null, error: null,
+      deltas: { d1: null, d5: null, d21: null, d63: null, ytd: null },
+    };
+  }
+  return { generated_at: lastRun || Date.now(), quotes, extras };
 }
 
 /* Het snapshot leeft in geheugen en is dus weg na een herstart — en een deploy
@@ -395,6 +443,28 @@ function hydrateFromDb() {
         ytd: deltaYTD(bars),
       },
       spark: sparkFrom(bars, rate),
+      error: null,
+      ts: Date.now(),
+    });
+    n++;
+  }
+  for (const ex of EXTRAS) {
+    const bars = q.all(ex.symbol);
+    if (bars.length < 2) continue;
+    EXTRAS_SNAPSHOT.set(ex.key, {
+      key: ex.key,
+      ticker: ex.symbol,
+      price: bars[0].close,
+      prev_close: bars[1].close,
+      currency: 'USD',
+      deltas: {
+        d1: deltaBars(bars, 1),
+        d5: deltaBars(bars, 5),
+        d21: deltaBars(bars, 21),
+        d63: deltaBars(bars, 63),
+        ytd: deltaYTD(bars),
+      },
+      spark: sparkFrom(bars, null),
       error: null,
       ts: Date.now(),
     });

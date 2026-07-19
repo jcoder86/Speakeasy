@@ -504,7 +504,21 @@ main {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.kpi-spark { margin-top: 2px; }
+/* Waarde + trend (sparkline of pijltje) naast elkaar i.p.v. de spark eronder
+   — anders bleef er een balk lege ruimte onder een korte waarde staan. */
+.kpi-value-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.kpi-value-row .kpi-value { flex: 0 0 auto; }
+.kpi-spark {
+  margin-top: 2px;
+  flex: 1 1 auto;
+  min-width: 36px;
+  max-width: 70px;
+}
+.kpi-value-row .kpi-spark { margin-top: 0; }
 .kpi-spark svg { display: block; }
 .rate-trend-arrow { font-size: 1rem; font-weight: 700; }
 .kpi-placeholder {
@@ -911,11 +925,6 @@ main {
   flex-wrap: wrap;
   gap: 4px;
 }
-.todo-meta {
-  font-size: 0.7rem;
-  color: var(--muted);
-}
-
 .todo .item-actions {
   flex: 0 0 auto;
   flex-wrap: nowrap;
@@ -942,7 +951,7 @@ main {
 
 /* Open to-do's zijn sleepbaar (ingedrukt houden, zie enableTodoDrag) — de
    cursor hint dat al vóór je begint te slepen. Niet op de knoppen zelf. */
-.todo:not(.done) { cursor: grab; }
+.todo:not(.done) { cursor: grab; user-select: none; }
 .todo.todo-dragging {
   cursor: grabbing;
   opacity: 0.6;

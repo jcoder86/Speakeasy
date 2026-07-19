@@ -37,7 +37,6 @@ const themeToggleMobile = document.getElementById('theme-toggle-mobile');
 const marketStatusDot = document.getElementById('market-status-dot');
 const marketStatusText = document.getElementById('market-status-text');
 const quotesUpdatedText = document.getElementById('quotes-updated-text');
-const kpiTodosValueEl = document.getElementById('kpi-todos-value');
 const kpiPortfolioValueEl = document.getElementById('kpi-portfolio-value');
 const kpiSavingsValueEl = document.getElementById('kpi-savings-value');
 const kpiSavingsSubEl = document.getElementById('kpi-savings-sub');
@@ -45,6 +44,12 @@ const kpiMortgageValueEl = document.getElementById('kpi-mortgage-value');
 const kpiMortgageSubEl = document.getElementById('kpi-mortgage-sub');
 const kpiSavingsSparkEl = document.getElementById('kpi-savings-spark');
 const kpiMortgageSparkEl = document.getElementById('kpi-mortgage-spark');
+const kpiOilValueEl = document.getElementById('kpi-oil-value');
+const kpiOilSubEl = document.getElementById('kpi-oil-sub');
+const kpiOilSparkEl = document.getElementById('kpi-oil-spark');
+const kpiCryptoValueEl = document.getElementById('kpi-crypto-value');
+const kpiCryptoSubEl = document.getElementById('kpi-crypto-sub');
+const kpiCryptoSparkEl = document.getElementById('kpi-crypto-spark');
 const homeStocksExcerptEl = document.getElementById('home-stocks-excerpt');
 const homeMoversEl = document.getElementById('home-movers');
 const homeNewsStocksEl = document.getElementById('home-news-stocks');
@@ -432,7 +437,7 @@ async function copyImage(src) {
    FEED — WATCHLIST + KOERSEN
    =================================================================== */
 const watchlist = new Map(); // id -> {id, ticker, display_name}
-let quotesCache = { ts: 0, quotes: [] };
+let quotesCache = { ts: 0, quotes: [], extras: {} };
 
 function pct(v) {
   if (v === null || v === undefined || Number.isNaN(v)) return '—';
@@ -612,11 +617,41 @@ function updatePortfolioPlaceholder() {
   kpiPortfolioValueEl.className = 'kpi-value ' + trendClass(avg);
 }
 
+// Oil & Gas (WTI-olie) en Crypto (Bitcoin) — komen niet uit de watchlist maar
+// als losse "extra's" uit dezelfde Twelve Data-infrastructuur (zie quotes.js),
+// met échte dagcandles, dus meteen een volwaardige sparkline i.p.v. de
+// aanname-fallback die de rentes gebruiken (die accumuleren maar 1x/dag).
+function renderExtraKpi(valueEl, subEl, sparkEl, q, label) {
+  if (!valueEl) return;
+  if (!q || q.price === null || q.price === undefined) {
+    valueEl.textContent = '–';
+    valueEl.className = 'kpi-value';
+    if (subEl) subEl.textContent = q && q.error ? 'Niet beschikbaar' : 'Laden…';
+    if (sparkEl) sparkEl.innerHTML = '';
+    return;
+  }
+  const d1 = q.deltas && q.deltas.d1;
+  valueEl.textContent = priceStr(q.price, q.currency);
+  valueEl.className = 'kpi-value ' + trendClass(d1);
+  if (subEl) subEl.textContent = `${label} · ${pct(d1)}`;
+  if (sparkEl) {
+    sparkEl.innerHTML = '';
+    if (Array.isArray(q.spark) && q.spark.length >= 3) sparkEl.appendChild(sparklineSvg(q.spark));
+  }
+}
+
+function renderExtras() {
+  const extras = quotesCache.extras || {};
+  renderExtraKpi(kpiOilValueEl, kpiOilSubEl, kpiOilSparkEl, extras.oil, 'WTI Crude');
+  renderExtraKpi(kpiCryptoValueEl, kpiCryptoSubEl, kpiCryptoSparkEl, extras.crypto, 'Bitcoin');
+}
+
 function renderQuotesStrip() {
   // Home-excerpt (aandelen + movers) leest dezelfde watchlist/quotesCache,
   // dus hier centraal aanroepen dekt alle call-sites in één keer.
   renderHomeStocksAndMovers();
   updatePortfolioPlaceholder();
+  renderExtras();
 
   quotesStripEl.innerHTML = '';
   const quotesById = new Map(quotesCache.quotes.map((q) => [q.ticker, q]));
@@ -807,12 +842,12 @@ async function loadQuotes() {
         for (const r of data.watchlist) watchlist.set(r.id, r);
         renderWatchlistManager();
       }
-      quotesCache = { ts: Date.now(), quotes: [] };
+      quotesCache = { ts: Date.now(), quotes: [], extras: {} };
       renderQuotesStrip();
       return;
     }
     quotesStatusEl.hidden = true;
-    quotesCache = { ts: Date.now(), quotes: data.quotes || [] };
+    quotesCache = { ts: Date.now(), quotes: data.quotes || [], extras: data.extras || {} };
     renderQuotesStrip();
   } catch {
     quotesStatusEl.hidden = false;
@@ -1299,7 +1334,6 @@ function updateEmptyStates() {
 
   // Home telt ALLE open to-do's, filter-onafhankelijk (geen filterbalk daar).
   const totalOpen = [...todos.values()].filter((t) => !t.done).length;
-  kpiTodosValueEl.textContent = String(totalOpen);
   homeTodosEmptyEl.hidden = totalOpen > 0;
 }
 
@@ -1463,15 +1497,6 @@ function renderTodoView(el, todo) {
     body.appendChild(chipRow);
   }
 
-  if (todo.edited_at) {
-    const meta = document.createElement('div');
-    meta.className = 'todo-meta';
-    const edited = document.createElement('span');
-    edited.className = 'edited-label';
-    edited.textContent = '(bewerkt)';
-    meta.appendChild(edited);
-    body.appendChild(meta);
-  }
   el.appendChild(body);
 
   // Geen afvink-knop meer (workflow is: klaar = verwijderen, niet afvinken)
@@ -1654,6 +1679,11 @@ function enableTodoDrag(el, getTodo) {
     if (!todo || todo.done) return; // afgeronde items zijn niet sleepbaar
     if (e.target.closest('button, textarea, input, a')) return; // knoppen ongemoeid laten
     if (e.pointerType === 'mouse' && e.button !== 0) return;
+    // Zonder dit selecteert de browser de tekst waar de muis overheen sleept
+    // (native tekstselectie-gedrag bij ingedrukt-houden), wat er knullig
+    // uitziet. Alleen voor muis: op touch zou preventDefault hier scrollen
+    // kunnen blokkeren nog vóórdat we weten of dit een tik of een sleep wordt.
+    if (e.pointerType === 'mouse') e.preventDefault();
     startX = e.clientX;
     startY = e.clientY;
     activePointerId = e.pointerId;
