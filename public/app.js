@@ -38,6 +38,7 @@ const marketStatusDot = document.getElementById('market-status-dot');
 const marketStatusText = document.getElementById('market-status-text');
 const quotesUpdatedText = document.getElementById('quotes-updated-text');
 const kpiTodosValueEl = document.getElementById('kpi-todos-value');
+const kpiPortfolioValueEl = document.getElementById('kpi-portfolio-value');
 const kpiSavingsValueEl = document.getElementById('kpi-savings-value');
 const kpiSavingsSubEl = document.getElementById('kpi-savings-sub');
 const kpiMortgageValueEl = document.getElementById('kpi-mortgage-value');
@@ -482,14 +483,17 @@ function deltaCell(row, value, extraClass) {
 // Compacte sparkline als inline-SVG. Kleur volgt de trend (groen op/rood neer),
 // zodat hij aansluit bij de percentages ernaast.
 const SVG_NS = 'http://www.w3.org/2000/svg';
-function sparklineSvg(closes, width) {
-  const w = width || 120;
+// Geen expliciete width/height-attributen: CSS (.spark { width:100% }) bepaalt
+// de daadwerkelijke weergavebreedte, zodat de lijn de kolom altijd volledig
+// vult — ongeacht hoe breed die kolom precies wordt gerenderd (was eerst een
+// vaste px-breedte, die bij een bredere kolom een kale rand overliet).
+function sparklineSvg(closes) {
+  const w = 200; // interne coördinaten-breedte (viewBox), niet de weergave
   const h = 22;
   const pad = 2;
   const svg = document.createElementNS(SVG_NS, 'svg');
-  svg.setAttribute('width', w);
-  svg.setAttribute('height', h);
   svg.setAttribute('viewBox', `0 0 ${w} ${h}`);
+  svg.setAttribute('preserveAspectRatio', 'none'); // vult de kolombreedte exact
   svg.classList.add('spark');
   if (!Array.isArray(closes) || closes.length < 3) return svg;
 
@@ -540,7 +544,7 @@ function buildQuotesThead() {
 
 // Eén rij van de koerstabel — alle kolommen (koers, 1d/1w/1m/3m/YTD,
 // sparkline). Gedeeld tussen de volledige Aandelen-tabel en het Home-excerpt.
-function buildQuoteRow(item, q, sparkWidth) {
+function buildQuoteRow(item, q) {
   const row = document.createElement('tr');
   row.dataset.ticker = item.ticker;
 
@@ -577,7 +581,7 @@ function buildQuoteRow(item, q, sparkWidth) {
     // sparkline (30 handelsdagen), kleur volgt de 1m-trend
     const sp = document.createElement('td');
     sp.className = 'q-hide-sm q-spark';
-    sp.appendChild(sparklineSvg(q.spark, sparkWidth));
+    sp.appendChild(sparklineSvg(q.spark));
     row.appendChild(sp);
   } else {
     const td = document.createElement('td');
@@ -589,10 +593,30 @@ function buildQuoteRow(item, q, sparkWidth) {
   return row;
 }
 
+// Portfolio-KPI-placeholder: er zijn nog geen echte holdings (fase 9, apart
+// aandeel+aantal+aankoopprijs) — tot die er zijn, op verzoek een indicatie
+// o.b.v. het ongewogen gemiddelde van de 1w-delta (d5) over de hele
+// watchlist. Zodra fase 9 er is, vervangt een echte P&L-berekening dit.
+function updatePortfolioPlaceholder() {
+  if (!kpiPortfolioValueEl) return;
+  const vals = quotesCache.quotes
+    .map((q) => q.deltas && q.deltas.d5)
+    .filter((v) => typeof v === 'number' && Number.isFinite(v));
+  if (!vals.length) {
+    kpiPortfolioValueEl.textContent = '–';
+    kpiPortfolioValueEl.className = 'kpi-value';
+    return;
+  }
+  const avg = vals.reduce((a, b) => a + b, 0) / vals.length;
+  kpiPortfolioValueEl.textContent = pct(avg);
+  kpiPortfolioValueEl.className = 'kpi-value ' + trendClass(avg);
+}
+
 function renderQuotesStrip() {
   // Home-excerpt (aandelen + movers) leest dezelfde watchlist/quotesCache,
   // dus hier centraal aanroepen dekt alle call-sites in één keer.
   renderHomeStocksAndMovers();
+  updatePortfolioPlaceholder();
 
   quotesStripEl.innerHTML = '';
   const quotesById = new Map(quotesCache.quotes.map((q) => [q.ticker, q]));
@@ -1046,10 +1070,7 @@ function renderHomeStocksAndMovers() {
     table.appendChild(buildQuotesThead());
     const tbody = document.createElement('tbody');
     for (const item of items) {
-      // Smallere sparkline dan de volledige Aandelen-pagina (120px): deze
-      // kolom is hooguit 4/9 van de hoofdbreedte, dus juist minder ruimte,
-      // niet meer. 170px veroorzaakte horizontaal scrollen (vorige ronde).
-      tbody.appendChild(buildQuoteRow(item, quotesById.get(item.ticker), 70));
+      tbody.appendChild(buildQuoteRow(item, quotesById.get(item.ticker)));
     }
     table.appendChild(tbody);
     homeStocksExcerptEl.appendChild(table);
@@ -1160,26 +1181,39 @@ function renderHomeNews() {
 // app draait (geen gratis historische-rente-API bestaat) — pas na enkele
 // weken tot maanden wordt hij echt betekenisvol. sparklineSvg tekent sowieso
 // pas vanaf 3 datapunten, dus in het begin blijft de kaart bewust leeg.
+function buildRateArrow(cls, symbol, title) {
+  const arrow = document.createElement('span');
+  arrow.className = 'rate-trend-arrow ' + cls;
+  arrow.textContent = symbol;
+  arrow.title = title;
+  return arrow;
+}
+
 function renderRateSpark(el, spark) {
   el.innerHTML = '';
-  if (!Array.isArray(spark) || spark.length < 2) return; // nog geen tweede meting
+  if (!Array.isArray(spark) || spark.length === 0) return;
   if (spark.length >= 3) {
-    el.appendChild(sparklineSvg(spark, 90));
+    el.appendChild(sparklineSvg(spark));
     return;
   }
-  // Nog geen 3 punten voor een lijngrafiek (bouwt zich dagelijks op) — toon
-  // in de tussentijd een pijltje voor de laatste beweging t.o.v. de vorige
-  // meting, zodat er meteen íéts van trend zichtbaar is.
-  const delta = spark[spark.length - 1] - spark[spark.length - 2];
-  const arrow = document.createElement('span');
-  arrow.className = 'rate-trend-arrow ' + (delta > 0 ? 'up' : delta < 0 ? 'down' : 'flat');
-  arrow.textContent = delta > 0 ? '▲' : delta < 0 ? '▼' : '–';
-  arrow.title = delta > 0
-    ? 'Gestegen t.o.v. de vorige meting'
-    : delta < 0
-      ? 'Gedaald t.o.v. de vorige meting'
-      : 'Ongewijzigd t.o.v. de vorige meting';
-  el.appendChild(arrow);
+  if (spark.length === 2) {
+    // Nog geen 3 punten voor een lijngrafiek (bouwt zich dagelijks op) —
+    // toon in de tussentijd een pijltje voor de laatste beweging t.o.v. de
+    // vorige meting, zodat er meteen íéts van trend zichtbaar is.
+    const delta = spark[1] - spark[0];
+    el.appendChild(buildRateArrow(
+      delta > 0 ? 'up' : delta < 0 ? 'down' : 'flat',
+      delta > 0 ? '▲' : delta < 0 ? '▼' : '–',
+      delta > 0 ? 'Gestegen t.o.v. de vorige meting'
+        : delta < 0 ? 'Gedaald t.o.v. de vorige meting'
+          : 'Ongewijzigd t.o.v. de vorige meting',
+    ));
+    return;
+  }
+  // Nog maar 1 meting (nog geen enkele vergelijking mogelijk): op verzoek
+  // een voorlopige aanname van een stijgende trend, tot er echte data is —
+  // corrigeert zichzelf zodra er een 2e meting binnenkomt.
+  el.appendChild(buildRateArrow('up', '▲', 'Aanname (nog geen historische data): stijgende trend'));
 }
 
 async function loadRates() {
@@ -1381,12 +1415,20 @@ async function deleteLabel(id) {
   }
 }
 
+// Vaste set van 5 — zelfde waarden als server.js's TODO_COLORS (validatie
+// gebeurt server-side; hier alleen voor de kleurkiezer in edit-modus).
+const TODO_COLORS = ['#ef4444', '#f97316', '#22c55e', '#3b82f6', '#8b5cf6'];
+
 /* ---------- Todo-rendering ---------- */
 function buildTodoEl(todo) {
   const el = document.createElement('div');
   el.className = 'todo';
   el.dataset.id = todo.id;
   renderTodoView(el, todo);
+  // Eén keer wiren op het element zelf (niet bij elke re-render, anders
+  // stapelen listeners op) — leest de actuele todo-state via de todos-Map
+  // op het moment van interactie, niet de todo uit de sluiting hierboven.
+  enableTodoDrag(el, () => todos.get(todo.id));
   return el;
 }
 
@@ -1394,6 +1436,17 @@ function renderTodoView(el, todo) {
   el.innerHTML = '';
   el.classList.remove('editing');
   el.classList.toggle('done', !!todo.done);
+
+  // Kaart-kleur (optioneel, via bewerken): custom property + data-attribuut
+  // als CSS-haakje, color-mix() in styles.css zorgt voor goed contrast in
+  // beide thema's.
+  if (todo.color) {
+    el.style.setProperty('--todo-color', todo.color);
+    el.dataset.color = '1';
+  } else {
+    el.style.removeProperty('--todo-color');
+    delete el.dataset.color;
+  }
 
   const body = document.createElement('div');
   body.className = 'todo-body';
@@ -1421,46 +1474,12 @@ function renderTodoView(el, todo) {
   }
   el.appendChild(body);
 
+  // Geen afvink-knop meer (workflow is: klaar = verwijderen, niet afvinken)
+  // en geen ▲▼-knoppen meer (schuiven gaat nu via ingedrukt-houden-en-
+  // slepen, zie enableTodoDrag in buildTodoEl) — alleen bewerken/verwijderen
+  // blijven over, zo klein en rechts mogelijk zodat de tekst de rest wint.
   const actions = document.createElement('div');
   actions.className = 'item-actions';
-
-  // Afvinken als icoon-knop, samen met de overige acties — een losse
-  // checkbox-kolom links viel niet meer op tussen alle andere knoppen en
-  // kostte breedte die nu naar de tekst gaat.
-  const checkBtn = makeIconBtn(
-    '✓',
-    todo.done ? 'Markeer als niet afgerond' : 'Markeer als afgerond',
-    () => toggleTodo(todo.id, !todo.done),
-  );
-  checkBtn.classList.toggle('todo-check-btn-done', !!todo.done);
-  checkBtn.setAttribute('aria-pressed', String(!!todo.done));
-  actions.appendChild(checkBtn);
-
-  if (!todo.done) {
-    // Schuiven heeft alleen zin binnen de open lijst — afgeronde items zijn
-    // historisch en hoeven niet herordend te worden.
-    const openIds = [...todos.values()].filter((t) => !t.done).map((t) => t.id);
-    const idx = openIds.indexOf(todo.id);
-    const moves = document.createElement('span');
-    moves.className = 'todo-moves';
-    const up = document.createElement('button');
-    up.type = 'button';
-    up.className = 'todo-move';
-    up.textContent = '▲';
-    up.title = 'Omhoog';
-    up.disabled = idx <= 0;
-    up.addEventListener('click', () => moveTodo(todo.id, -1));
-    const down = document.createElement('button');
-    down.type = 'button';
-    down.className = 'todo-move';
-    down.textContent = '▼';
-    down.title = 'Omlaag';
-    down.disabled = idx < 0 || idx >= openIds.length - 1;
-    down.addEventListener('click', () => moveTodo(todo.id, +1));
-    moves.appendChild(up);
-    moves.appendChild(down);
-    actions.appendChild(moves);
-  }
   actions.appendChild(makeIconBtn('✎', 'Bewerk', () => renderTodoEdit(el, todo)));
   actions.appendChild(makeIconBtn('✕', 'Verwijder', () => deleteTodo(todo.id)));
   el.appendChild(actions);
@@ -1498,10 +1517,46 @@ function renderTodoEdit(el, todo) {
   }
   el.appendChild(labelSel);
 
+  // Kaart-kleur: 5 vaste zwatches + "geen kleur", single-select (i.t.t.
+  // labels, die meerdere tegelijk toestaan).
+  let selectedColor = todo.color || null;
+  const colorSel = document.createElement('div');
+  colorSel.className = 'color-selector';
+  const noneSwatch = document.createElement('button');
+  noneSwatch.type = 'button';
+  noneSwatch.className = 'color-swatch color-swatch-none';
+  noneSwatch.title = 'Geen kleur';
+  noneSwatch.setAttribute('aria-label', 'Geen kleur');
+  noneSwatch.classList.toggle('selected', !selectedColor);
+  colorSel.appendChild(noneSwatch);
+  const swatchEls = [noneSwatch];
+  for (const c of TODO_COLORS) {
+    const sw = document.createElement('button');
+    sw.type = 'button';
+    sw.className = 'color-swatch';
+    sw.style.setProperty('--swatch-color', c);
+    sw.title = c;
+    sw.setAttribute('aria-label', `Kleur ${c}`);
+    sw.classList.toggle('selected', selectedColor === c);
+    sw.addEventListener('click', () => {
+      selectedColor = c;
+      for (const s of swatchEls) s.classList.remove('selected');
+      sw.classList.add('selected');
+    });
+    colorSel.appendChild(sw);
+    swatchEls.push(sw);
+  }
+  noneSwatch.addEventListener('click', () => {
+    selectedColor = null;
+    for (const s of swatchEls) s.classList.remove('selected');
+    noneSwatch.classList.add('selected');
+  });
+  el.appendChild(colorSel);
+
   const actions = document.createElement('div');
   actions.className = 'item-actions';
   actions.appendChild(
-    makeBtn('Opslaan', () => saveTodoEdit(todo.id, ta.value, [...selected])),
+    makeBtn('Opslaan', () => saveTodoEdit(todo.id, ta.value, [...selected], selectedColor)),
   );
   actions.appendChild(
     makeBtn('Annuleer', () => renderTodoView(el, todos.get(todo.id) || todo)),
@@ -1563,36 +1618,112 @@ async function loadTodos() {
 // Verschuif een open to-do één plek en persisteer de nieuwe volgorde.
 // Optimistisch: lokaal meteen herbouwen, dan naar de server (net als
 // moveWithinGroup voor de watchlist).
-async function moveTodo(id, dir) {
-  const openIds = [...todos.values()].filter((t) => !t.done).map((t) => t.id);
-  const i = openIds.indexOf(id);
-  const j = i + dir;
-  if (i < 0 || j < 0 || j >= openIds.length) return;
-  [openIds[i], openIds[j]] = [openIds[j], openIds[i]];
+/* ---------- Slepen om te herordenen (ingedrukt houden, Pointer Events) ----
+ * Vervangt de ▲▼-knoppen. Druk een open to-do in en houd ~300ms vast om 'm
+ * te kunnen verslepen; beweegt de vinger/muis vóór die tijd meer dan een
+ * paar pixels (scrollen, per ongeluk aanraken), dan wordt de sleep-intentie
+ * geannuleerd en gebeurt er niets — zo blijft normaal scrollen op mobiel
+ * gewoon werken. Live herordenen tijdens het slepen (rij wisselt van plek
+ * zodra de aanwijzer een buur passeert); bij loslaten gaat de nieuwe
+ * volgorde naar de server via het bestaande /api/todos/reorder-endpoint.
+ */
+const DRAG_HOLD_MS = 300;
+const DRAG_MOVE_CANCEL_PX = 8;
 
-  const doneIds = [...todos.values()].filter((t) => t.done).map((t) => t.id);
-  const byId = new Map(todos);
-  todos.clear();
-  for (const oid of [...openIds, ...doneIds]) todos.set(oid, byId.get(oid));
+function enableTodoDrag(el, getTodo) {
+  let holdTimer = null;
+  let dragging = false;
+  let startX = 0;
+  let startY = 0;
+  let activePointerId = null;
 
-  openTodosEl.innerHTML = '';
-  homeTodosListEl.innerHTML = '';
-  for (const oid of openIds) {
-    const t = todos.get(oid);
-    openTodosEl.appendChild(buildTodoEl(t));
-    homeTodosListEl.appendChild(buildTodoEl(t));
+  function clearHold() {
+    clearTimeout(holdTimer);
+    holdTimer = null;
+    el.removeEventListener('pointermove', onMoveDuringHold);
   }
-  applyFilter();
 
-  try {
-    await fetch('/api/todos/reorder', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ids: [...openIds, ...doneIds] }),
-    });
-  } catch {
-    loadTodos(); // bij een fout terug naar de serverwaarheid
+  function onMoveDuringHold(e) {
+    if (Math.abs(e.clientX - startX) > DRAG_MOVE_CANCEL_PX || Math.abs(e.clientY - startY) > DRAG_MOVE_CANCEL_PX) {
+      clearHold();
+    }
   }
+
+  function onPointerDown(e) {
+    const todo = getTodo();
+    if (!todo || todo.done) return; // afgeronde items zijn niet sleepbaar
+    if (e.target.closest('button, textarea, input, a')) return; // knoppen ongemoeid laten
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    startX = e.clientX;
+    startY = e.clientY;
+    activePointerId = e.pointerId;
+    el.addEventListener('pointermove', onMoveDuringHold);
+    el.addEventListener('pointerup', onPointerUpBeforeHold, { once: true });
+    el.addEventListener('pointercancel', onPointerUpBeforeHold, { once: true });
+    holdTimer = setTimeout(() => startDrag(e), DRAG_HOLD_MS);
+  }
+
+  function onPointerUpBeforeHold() {
+    clearHold();
+  }
+
+  function startDrag(e) {
+    clearHold();
+    dragging = true;
+    try { el.setPointerCapture(activePointerId); } catch { /* niet fataal */ }
+    el.classList.add('todo-dragging');
+    el.style.touchAction = 'none';
+    document.addEventListener('pointermove', onDragMove);
+    document.addEventListener('pointerup', onDragEnd, { once: true });
+    document.addEventListener('pointercancel', onDragEnd, { once: true });
+  }
+
+  function onDragMove(e) {
+    if (!dragging) return;
+    e.preventDefault();
+    const container = el.parentElement;
+    if (!container) return;
+    const items = [...container.querySelectorAll(':scope > .todo')];
+    const dragIdx = items.indexOf(el);
+    const y = e.clientY;
+    for (let i = 0; i < items.length; i++) {
+      if (items[i] === el) continue;
+      const rect = items[i].getBoundingClientRect();
+      const mid = rect.top + rect.height / 2;
+      if (i < dragIdx && y < mid) {
+        container.insertBefore(el, items[i]);
+        break;
+      }
+      if (i > dragIdx && y > mid) {
+        container.insertBefore(el, items[i].nextSibling);
+        break;
+      }
+    }
+  }
+
+  async function onDragEnd() {
+    dragging = false;
+    el.classList.remove('todo-dragging');
+    el.style.touchAction = '';
+    document.removeEventListener('pointermove', onDragMove);
+
+    const container = el.parentElement;
+    const openIdsInContainer = [...container.querySelectorAll(':scope > .todo')].map((n) => Number(n.dataset.id));
+    const doneIds = [...todos.values()].filter((t) => t.done).map((t) => t.id);
+    try {
+      await fetch('/api/todos/reorder', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: [...openIdsInContainer, ...doneIds] }),
+      });
+      // Server broadcast todo:reorder → loadTodos() ververst beide
+      // containers (hoofdpagina + Home) consistent met de nieuwe volgorde.
+    } catch {
+      loadTodos(); // bij een fout terug naar de serverwaarheid
+    }
+  }
+
+  el.addEventListener('pointerdown', onPointerDown);
 }
 
 /* ---------- Quick-add vanuit de to-do view ---------- */
@@ -1639,11 +1770,12 @@ async function toggleTodo(id, done) {
   }
 }
 
-async function saveTodoEdit(id, raw, labelIds) {
+async function saveTodoEdit(id, raw, labelIds, color) {
   const text = raw.trim();
   if (!text) return;
   const body = { text };
   if (Array.isArray(labelIds)) body.labels = labelIds;
+  if (color !== undefined) body.color = color;
   try {
     const res = await fetch(`/api/todos/${id}`, {
       method: 'PATCH',

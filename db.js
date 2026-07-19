@@ -105,4 +105,9 @@ if (!todoCols.some((c) => c.name === 'position')) {
   rows.forEach((r, i) => upd.run(i, r.id));
 }
 
+// --- Additieve migratie: todos.color (kaart-achtergrond, via bewerken) ---
+if (!todoCols.some((c) => c.name === 'color')) {
+  db.exec('ALTER TABLE todos ADD COLUMN color TEXT');
+}
+
 module.exports = { db, DATA_DIR, UPLOADS_DIR };

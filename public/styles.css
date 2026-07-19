@@ -230,7 +230,10 @@ main {
    valt daardoor rechts ná de lijn, niet als gat ervoor. */
 .quotes-table td.q-spark,
 .quotes-table th.q-spark { width: auto; padding-left: 16px; padding-right: 10px; }
-.q-spark .spark { display: block; margin-left: 0; }
+/* width:100% i.c.m. de SVG's viewBox (geen eigen width/height-attributen)
+   laat de lijn de kolom altijd volledig vullen, ongeacht de gerenderde
+   breedte — geen dode ruimte meer na een smalle vaste px-breedte. */
+.spark { display: block; width: 100%; height: 22px; }
 
 /* Op smalle schermen alleen de belangrijkste kolommen. */
 @media (max-width: 700px) {
@@ -878,6 +881,15 @@ main {
 }
 .todo.filtered-out { display: none; }
 
+/* Kaart-kleur (optioneel, via bewerken): color-mix() met --surface als basis
+   past zich vanzelf aan het actieve thema aan — in donker thema mixt de tint
+   over de donkere achtergrond (blijft donker-getint), in licht thema over de
+   lichte (blijft licht-getint), dus contrast blijft in beide gevallen goed. */
+.todo[data-color] {
+  background: color-mix(in srgb, var(--todo-color) 16%, var(--surface));
+  border-color: color-mix(in srgb, var(--todo-color) 40%, var(--border));
+}
+
 .todo-body {
   flex: 1 1 auto;
   min-width: 0;
@@ -907,52 +919,36 @@ main {
 .todo .item-actions {
   flex: 0 0 auto;
   flex-wrap: nowrap;
-  gap: 3px;
+  gap: 2px;
   margin-top: 0;
   padding-top: 0;
   margin-left: auto; /* duwt de knoppencluster tegen de rechterrand */
 }
 .todo .icon-btn {
-  min-height: 36px;
-  padding: 0 8px;
-  font-size: 0.74rem;
-}
-
-/* Afvink-knop: gevuld met accentkleur zodra de to-do is afgerond, zodat
-   de status in één oogopslag duidelijk is tussen de overige knoppen. */
-.todo-check-btn-done {
-  background: var(--accent);
-  color: var(--accent-text);
-  border-color: var(--accent);
+  min-height: 32px;
+  padding: 0 6px;
+  font-size: 0.72rem;
 }
 
 /* Vierkante icoon-variant (Bewerk/Verwijder als symbool i.p.v. tekstlabel) —
-   scheelt breedte t.o.v. tekst-knoppen in een rij die al vol zit met
-   schuifknoppen + labels. */
+   klein en strak tegen de rechterrand, zodat de tekst zoveel mogelijk
+   breedte krijgt (geen afvink- of schuifknoppen meer, zie enableTodoDrag). */
 .icon-btn-square {
-  min-width: 36px;
+  min-width: 32px;
   padding: 0;
-  font-size: 1rem;
+  font-size: 0.9rem;
   line-height: 1;
 }
 
-/* Verschuif-knoppen ▲▼ — horizontaal naast elkaar, zelfde hoogte als de
-   overige item-acties in deze rij (i.t.t. de verticale variant bij
-   watchlist, die in een eigen smalle kolom naast de tekst staat). */
-.todo-moves { display: inline-flex; gap: 2px; flex: none; }
-.todo-move {
-  min-height: 36px;
-  min-width: 30px;
-  border: 1px solid var(--border);
-  background: var(--bg);
-  color: var(--muted);
-  border-radius: 6px;
-  font-size: 0.7rem;
-  padding: 0;
-  cursor: pointer;
+/* Open to-do's zijn sleepbaar (ingedrukt houden, zie enableTodoDrag) — de
+   cursor hint dat al vóór je begint te slepen. Niet op de knoppen zelf. */
+.todo:not(.done) { cursor: grab; }
+.todo.todo-dragging {
+  cursor: grabbing;
+  opacity: 0.6;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+  z-index: 5;
 }
-.todo-move:hover:not(:disabled) { color: var(--text); border-color: var(--muted); }
-.todo-move:disabled { opacity: 0.3; cursor: default; }
 
 /* Edit-modus: alles verticaal in de kaart */
 .todo.editing {
@@ -967,6 +963,40 @@ main {
   gap: 6px;
   margin-top: 2px;
 }
+
+/* Kaart-kleur: 5 vaste zwatches + "geen kleur", single-select. */
+.color-selector {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+.color-swatch {
+  width: 28px;
+  height: 28px;
+  min-height: 28px;
+  padding: 0;
+  border-radius: 50%;
+  border: 2px solid var(--border);
+  background: var(--swatch-color, transparent);
+  cursor: pointer;
+}
+.color-swatch.selected {
+  border-color: var(--text);
+  box-shadow: 0 0 0 2px var(--swatch-color, var(--muted));
+}
+.color-swatch-none {
+  background: var(--bg);
+  position: relative;
+}
+.color-swatch-none::after {
+  content: '';
+  position: absolute;
+  inset: 6px;
+  border-top: 2px solid var(--muted);
+  transform: rotate(45deg);
+}
+
 .muted-hint {
   font-size: 0.8rem;
   color: var(--muted);

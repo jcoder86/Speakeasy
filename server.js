@@ -254,6 +254,11 @@ function setTodoLabels(todoId, labelIds) {
   }
 }
 
+// Vaste set van 5 — bewust geen vrije kleurkeuze (zoals labels): dit is de
+// achtergrond van de hele kaart, dus moet in zowel licht als donker thema
+// betrouwbaar goed contrasteren (zie color-mix() in styles.css).
+const TODO_COLORS = ['#ef4444', '#f97316', '#22c55e', '#3b82f6', '#8b5cf6'];
+
 app.get('/api/todos', (req, res) => {
   // Twee queries, geen N+1: één voor todos, één voor alle todo_labels-joins.
   const todos = db.prepare('SELECT * FROM todos ORDER BY position ASC, id DESC').all();
@@ -305,8 +310,12 @@ app.patch('/api/todos/:id', (req, res) => {
   const hasDone = typeof req.body.done === 'boolean';
   const hasText = typeof req.body.text === 'string';
   const hasLabels = Array.isArray(req.body.labels);
-  if (!hasDone && !hasText && !hasLabels) {
+  const hasColor = 'color' in req.body;
+  if (!hasDone && !hasText && !hasLabels && !hasColor) {
     return res.status(400).json({ error: 'Niets om bij te werken.' });
+  }
+  if (hasColor && req.body.color !== null && !TODO_COLORS.includes(req.body.color)) {
+    return res.status(400).json({ error: 'Ongeldige kleur.' });
   }
 
   // Afvinken/uitvinken: raakt done + completed_at, niet de tekst.
@@ -332,10 +341,16 @@ app.patch('/api/todos/:id', (req, res) => {
     setTodoLabels(id, req.body.labels);
   }
 
+  // Kaart-kleur: los van tekst/done/labels, null wist 'm weer.
+  if (hasColor) {
+    db.prepare('UPDATE todos SET color = ? WHERE id = ?').run(req.body.color, id);
+  }
+
   const updated = getTodoWithLabels(id);
-  // Bij een enkelvoudige toggle (geen tekst/labels) blijft het semantisch een
-  // toggle-event; andere clients kunnen dan aparte animatie tonen indien nodig.
-  const event = hasDone && !hasText && !hasLabels ? 'todo:toggle' : 'todo:edit';
+  // Bij een enkelvoudige toggle (geen tekst/labels/kleur) blijft het
+  // semantisch een toggle-event; andere clients tonen dan evt. een aparte
+  // animatie.
+  const event = hasDone && !hasText && !hasLabels && !hasColor ? 'todo:toggle' : 'todo:edit';
   broadcast(event, updated);
   res.json(updated);
 });
