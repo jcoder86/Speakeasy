@@ -94,6 +94,20 @@ function makeBtn(label, onClick) {
   return b;
 }
 
+// Compacte vierkante knop met alleen een symbool (i.p.v. tekstlabel) —
+// scheelt breedte in rijen die al veel acties naast elkaar hebben (to-do's
+// met schuifknoppen + labels). aria-label/title houden 'm toegankelijk.
+function makeIconBtn(symbol, ariaLabel, onClick) {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = 'icon-btn icon-btn-square';
+  b.textContent = symbol;
+  b.setAttribute('aria-label', ariaLabel);
+  b.title = ariaLabel;
+  b.addEventListener('click', onClick);
+  return b;
+}
+
 /* ---------- View-routing (sidebar / bottom-nav / meer-overflow) ---------- */
 // Elke pagina is een eigen <section class="view" id="<naam>-view">. Precies
 // één krijgt .view-active; alle nav-knoppen delen dezelfde class + attribuut,
@@ -1147,8 +1161,24 @@ function renderHomeNews() {
 // pas vanaf 3 datapunten, dus in het begin blijft de kaart bewust leeg.
 function renderRateSpark(el, spark) {
   el.innerHTML = '';
-  if (!Array.isArray(spark) || spark.length < 3) return;
-  el.appendChild(sparklineSvg(spark, 90));
+  if (!Array.isArray(spark) || spark.length < 2) return; // nog geen tweede meting
+  if (spark.length >= 3) {
+    el.appendChild(sparklineSvg(spark, 90));
+    return;
+  }
+  // Nog geen 3 punten voor een lijngrafiek (bouwt zich dagelijks op) — toon
+  // in de tussentijd een pijltje voor de laatste beweging t.o.v. de vorige
+  // meting, zodat er meteen íéts van trend zichtbaar is.
+  const delta = spark[spark.length - 1] - spark[spark.length - 2];
+  const arrow = document.createElement('span');
+  arrow.className = 'rate-trend-arrow ' + (delta > 0 ? 'up' : delta < 0 ? 'down' : 'flat');
+  arrow.textContent = delta > 0 ? '▲' : delta < 0 ? '▼' : '–';
+  arrow.title = delta > 0
+    ? 'Gestegen t.o.v. de vorige meting'
+    : delta < 0
+      ? 'Gedaald t.o.v. de vorige meting'
+      : 'Ongewijzigd t.o.v. de vorige meting';
+  el.appendChild(arrow);
 }
 
 async function loadRates() {
@@ -1428,8 +1458,8 @@ function renderTodoView(el, todo) {
     moves.appendChild(down);
     actions.appendChild(moves);
   }
-  actions.appendChild(makeBtn('Bewerk', () => renderTodoEdit(el, todo)));
-  actions.appendChild(makeBtn('Verwijder', () => deleteTodo(todo.id)));
+  actions.appendChild(makeIconBtn('✎', 'Bewerk', () => renderTodoEdit(el, todo)));
+  actions.appendChild(makeIconBtn('✕', 'Verwijder', () => deleteTodo(todo.id)));
   el.appendChild(actions);
 }
 

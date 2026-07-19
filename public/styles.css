@@ -503,6 +503,7 @@ main {
 }
 .kpi-spark { margin-top: 2px; }
 .kpi-spark svg { display: block; }
+.rate-trend-arrow { font-size: 1rem; font-weight: 700; }
 .kpi-placeholder {
   font-size: 0.8rem;
   color: var(--muted);
@@ -928,6 +929,16 @@ main {
   min-height: 36px;
   padding: 0 8px;
   font-size: 0.74rem;
+}
+
+/* Vierkante icoon-variant (Bewerk/Verwijder als symbool i.p.v. tekstlabel) —
+   scheelt breedte t.o.v. tekst-knoppen in een rij die al vol zit met
+   schuifknoppen + labels. */
+.icon-btn-square {
+  min-width: 36px;
+  padding: 0;
+  font-size: 1rem;
+  line-height: 1;
 }
 
 /* Verschuif-knoppen ▲▼ — horizontaal naast elkaar, zelfde hoogte als de

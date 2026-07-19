@@ -8,28 +8,26 @@
  * de gratis 20-calls/dag-tier was niet te bevestigen zonder dat budget te
  * riskeren). Daarom, net als bij rates.js: best-effort scrapen.
  *
- * Bron: stockanalysis.com/markets/active/ — "most active by volume".
- * Bewust niet hun /gainers//losers-pagina's: die zijn vrijwel volledig
- * micro-/penny-stocks (grote %-bewegingen op weinig volume, geen bekende
- * namen). De "most active"-lijst bevat wél herkenbare grote bedrijven
- * (NVDA, NFLX, INTC, ...) en heeft toevallig ook een %-change-kolom, dus
- * uit dezelfde ene fetch halen we zowel "welke aandelen doen ertoe" als
- * "hoe bewegen ze vandaag". robots.txt van stockanalysis.com staat scrapen
- * toe (alleen specifieke scraper-bots expliciet geblokkeerd, niet algemeen).
+ * Bron: stockanalysis.com/markets/gainers/ en /losers/ — deze zijn al op
+ * %-verandering gesorteerd, dus dit zijn de daadwerkelijk grootste stijgers
+ * en dalers (niet "most active by volume", dat gaf vorige versie modeste
+ * 1-2%-bewegingen: veelgehandelde large-caps bewegen zelden hard). Keerzijde:
+ * de grootste %-bewegers zijn vaak kleinere, minder bekende bedrijven — dat
+ * is inherent aan wat "biggest movers" betekent, geen bug. Een lichte
+ * marktkapitalisatie-vloer filtert alleen de meest illiquide nanocaps/shells
+ * (waar een paar aandelen handel al een %-uitschieter veroorzaakt) eruit.
  *
- * Filter: marktkapitalisatie >= MIN_MARKET_CAP_M (herkenbare bedrijven,
- * geen microcaps) én ticker niet in je eigen watchlist. De statische HTML
- * bevat maar ~15-20 rijen (geen paginering zonder JS), dus op een dag met
- * overwegend rode of groene koersen kan één kolom (stijgers/dalers) dun of
- * leeg uitvallen — inherent aan deze bron, geen bug.
+ * robots.txt van stockanalysis.com staat scrapen toe (alleen specifieke
+ * scraper-bots expliciet geblokkeerd, niet algemeen).
  */
 
 const { db } = require('./db');
 
-const ACTIVE_URL = 'https://stockanalysis.com/markets/active/';
+const GAINERS_URL = 'https://stockanalysis.com/markets/gainers/';
+const LOSERS_URL = 'https://stockanalysis.com/markets/losers/';
 const REFRESH_MS = 30 * 60 * 1000; // 30 min — discovery-content, geen kernfunctie
 const FETCH_TIMEOUT_MS = 15000;
-const MIN_MARKET_CAP_M = 5000; // $5B — "herkenbaar bedrijf", geen microcap-ruis
+const MIN_MARKET_CAP_M = 10; // $10M — filtert alleen evidente nanocap/shell-ruis
 const PER_COLUMN = 3;
 
 const UA = { 'User-Agent': 'Mozilla/5.0 (compatible; JanApp/1.0; personal-dashboard)' };
@@ -37,14 +35,17 @@ const UA = { 'User-Agent': 'Mozilla/5.0 (compatible; JanApp/1.0; personal-dashbo
 let cache = { gainers: [], losers: [], ts: 0, error: null };
 
 function parseMarketCap(str) {
-  const m = String(str).match(/([\d.]+)\s*([MBT])/i);
+  const m = String(str).match(/([\d.]+)\s*([KMBT])/i);
   if (!m) return null;
   const n = parseFloat(m[1]);
-  const mult = { M: 1, B: 1000, T: 1_000_000 }[m[2].toUpperCase()];
+  const mult = { K: 0.001, M: 1, B: 1000, T: 1_000_000 }[m[2].toUpperCase()];
   return Number.isFinite(n) ? n * mult : null;
 }
 
-function parseActiveStocks(html) {
+// Gainers/losers-pagina's: kolomvolgorde na "No." is naam, %change, koers,
+// volume, marktcap — andere volgorde dan de (niet meer gebruikte)
+// most-active-pagina, dus een eigen parser i.p.v. hergebruik.
+function parseMoversPage(html) {
   const tbody = html.match(/<tbody>[\s\S]*?<\/tbody>/);
   if (!tbody) return [];
   const rows = tbody[0].split('<tr').slice(1);
@@ -53,8 +54,8 @@ function parseActiveStocks(html) {
     const symMatch = r.match(/\/stocks\/[a-z0-9.-]+\/">([A-Z0-9.]+)</i);
     if (!symMatch) continue;
     const cells = [...r.matchAll(/<td[^>]*>([^<]*)<\/td>/g)].map((m) => m[1]).filter(Boolean);
-    // Volgorde: No., naam, volume, koers, %change, marketcap.
-    const [, name, , priceStr, changeStr, capStr] = cells;
+    // Volgorde: No., naam, %change, koers, volume, marktcap.
+    const [, name, changeStr, priceStr, , capStr] = cells;
     const changePct = parseFloat(String(changeStr).replace('%', ''));
     const marketCapM = parseMarketCap(capStr);
     if (!Number.isFinite(changePct) || marketCapM === null) continue;
@@ -81,27 +82,30 @@ async function fetchHtml(url) {
   }
 }
 
+function filterAndRank(list, watchlistTickers, sortDesc) {
+  return list
+    .filter((s) => s.marketCapM >= MIN_MARKET_CAP_M && !watchlistTickers.has(s.ticker.toUpperCase()))
+    .sort((a, b) => (sortDesc ? b.changePct - a.changePct : a.changePct - b.changePct))
+    .slice(0, PER_COLUMN);
+}
+
 async function refresh(broadcast) {
   try {
-    const html = await fetchHtml(ACTIVE_URL);
-    const all = parseActiveStocks(html);
-    if (!all.length) throw new Error('geen rijen gevonden — site-structuur gewijzigd?');
+    const [gainersHtml, losersHtml] = await Promise.all([
+      fetchHtml(GAINERS_URL),
+      fetchHtml(LOSERS_URL),
+    ]);
+    const gainersAll = parseMoversPage(gainersHtml);
+    const losersAll = parseMoversPage(losersHtml);
+    if (!gainersAll.length && !losersAll.length) {
+      throw new Error('geen rijen gevonden — site-structuur gewijzigd?');
+    }
 
     const watchlistTickers = new Set(
       db.prepare('SELECT ticker FROM watchlist').all().map((w) => w.ticker.toUpperCase()),
     );
-    const candidates = all.filter(
-      (s) => s.marketCapM >= MIN_MARKET_CAP_M && !watchlistTickers.has(s.ticker.toUpperCase()),
-    );
-
-    const gainers = candidates
-      .filter((s) => s.changePct > 0)
-      .sort((a, b) => b.changePct - a.changePct)
-      .slice(0, PER_COLUMN);
-    const losers = candidates
-      .filter((s) => s.changePct < 0)
-      .sort((a, b) => a.changePct - b.changePct)
-      .slice(0, PER_COLUMN);
+    const gainers = filterAndRank(gainersAll, watchlistTickers, true);
+    const losers = filterAndRank(losersAll, watchlistTickers, false);
 
     cache = { gainers, losers, ts: Date.now(), error: null };
   } catch (err) {
