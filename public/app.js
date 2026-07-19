@@ -35,13 +35,14 @@ const marketStatusDot = document.getElementById('market-status-dot');
 const marketStatusText = document.getElementById('market-status-text');
 const quotesUpdatedText = document.getElementById('quotes-updated-text');
 const kpiPortfolioValueEl = document.getElementById('kpi-portfolio-value');
-const kpiSavingsValueEl = document.getElementById('kpi-savings-value');
-const kpiSavingsSubEl = document.getElementById('kpi-savings-sub');
+const kpiEcbCardEl = document.getElementById('kpi-ecb-card');
+const kpiEcbValueEl = document.getElementById('kpi-ecb-value');
+const kpiEcbSubEl = document.getElementById('kpi-ecb-sub');
+const kpiEcbSparkEl = document.getElementById('kpi-ecb-spark');
+const kpiEcbWarnEl = document.getElementById('kpi-ecb-warn');
 const kpiMortgageValueEl = document.getElementById('kpi-mortgage-value');
 const kpiMortgageSubEl = document.getElementById('kpi-mortgage-sub');
-const kpiSavingsSparkEl = document.getElementById('kpi-savings-spark');
 const kpiMortgageSparkEl = document.getElementById('kpi-mortgage-spark');
-const kpiSavingsWarnEl = document.getElementById('kpi-savings-warn');
 const kpiMortgageWarnEl = document.getElementById('kpi-mortgage-warn');
 const kpiOilValueEl = document.getElementById('kpi-oil-value');
 const kpiOilSubEl = document.getElementById('kpi-oil-sub');
@@ -1302,21 +1303,64 @@ function renderRateSpark(el, spark) {
   el.appendChild(buildRateArrow('up', '▲', 'Aanname (nog geen historische data): stijgende trend'));
 }
 
+// "2026-06-17" -> "17 jun 2026". Expliciet in UTC uitlezen: de ECB-datum is
+// een kalenderdatum, geen tijdstip — zonder dit kan hij in een westelijke
+// tijdzone een dag terugvallen.
+function fmtRateDate(iso) {
+  const d = new Date(`${iso}T00:00:00Z`);
+  return d.toLocaleDateString('nl-NL', {
+    day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC',
+  });
+}
+
+function renderEcbCard(ecb, error) {
+  if (!kpiEcbValueEl) return;
+  if (!ecb) {
+    kpiEcbValueEl.textContent = '–';
+    kpiEcbSubEl.textContent = error ? 'Niet beschikbaar' : 'Laden…';
+    if (kpiEcbSparkEl) kpiEcbSparkEl.innerHTML = '';
+    if (kpiEcbCardEl) kpiEcbCardEl.title = '';
+    return;
+  }
+
+  kpiEcbValueEl.textContent = ecb.rate.toLocaleString('nl-NL', { minimumFractionDigits: 2 }) + '%';
+  renderRateSpark(kpiEcbSparkEl, ecb.spark);
+
+  /* De sparkline toont de lange lijn (2 jaar), maar die kan dalen terwijl de
+     laatste stap juist een verhoging was — daarom de laatste wijziging apart
+     en gekleurd, zodat richting-nu en richting-over-tijd niet door elkaar
+     lopen. */
+  kpiEcbSubEl.innerHTML = '';
+  if (ecb.change !== null && ecb.since) {
+    const delta = document.createElement('span');
+    delta.className = trendClass(ecb.change);
+    delta.textContent =
+      (ecb.change > 0 ? '+' : '') + ecb.change.toLocaleString('nl-NL', { minimumFractionDigits: 2 });
+    kpiEcbSubEl.appendChild(delta);
+    kpiEcbSubEl.appendChild(document.createTextNode(` sinds ${fmtRateDate(ecb.since)}`));
+  } else {
+    kpiEcbSubEl.textContent = 'Depositorente';
+  }
+
+  if (kpiEcbCardEl) {
+    const was = ecb.previous !== null
+      ? ` (was ${ecb.previous.toLocaleString('nl-NL', { minimumFractionDigits: 2 })}%)`
+      : '';
+    kpiEcbCardEl.title =
+      `ECB-depositorente${ecb.since ? `, ongewijzigd sinds ${fmtRateDate(ecb.since)}` : ''}${was}. `
+      + 'Dit is wat banken krijgen als ze geld bij de ECB stallen — de onderliggende '
+      + 'drijver van consumentenspaarrentes. Lijn = laatste 2 jaar.';
+  }
+}
+
 async function loadRates() {
   try {
     const res = await fetch('/api/rates');
     const data = await res.json();
-    if (data.savings) {
-      kpiSavingsValueEl.textContent = data.savings.rate.toLocaleString('nl-NL', { minimumFractionDigits: 2 }) + '%';
-      kpiSavingsSubEl.textContent = data.savings.name;
-      renderRateSpark(kpiSavingsSparkEl, data.savings.spark);
-    } else {
-      kpiSavingsValueEl.textContent = '–';
-      kpiSavingsSubEl.textContent = data.savings_error ? 'Niet beschikbaar' : 'Laden…';
-    }
-    applyWarn(kpiSavingsWarnEl, staleWarning({
-      error: data.savings_error,
-      okAt: data.savings && data.savings.ok_at,
+    renderEcbCard(data.ecb, data.ecb_error);
+    applyWarn(kpiEcbWarnEl, staleWarning({
+      error: data.ecb_error,
+      okAt: data.ecb && data.ecb.ok_at,
       maxAgeMs: RATES_MAX_AGE_MS,
     }));
 
@@ -1334,10 +1378,10 @@ async function loadRates() {
       maxAgeMs: RATES_MAX_AGE_MS,
     }));
   } catch {
-    kpiSavingsSubEl.textContent = 'Niet beschikbaar';
+    kpiEcbSubEl.textContent = 'Niet beschikbaar';
     kpiMortgageSubEl.textContent = 'Niet beschikbaar';
     const offline = 'Rentes niet op te halen — geen verbinding met de server.';
-    applyWarn(kpiSavingsWarnEl, offline);
+    applyWarn(kpiEcbWarnEl, offline);
     applyWarn(kpiMortgageWarnEl, offline);
   }
 }
