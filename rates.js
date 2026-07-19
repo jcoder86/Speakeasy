@@ -44,7 +44,20 @@ const HISTORY_DAYS = 180; // ruim genoeg voor een 3-6 maanden trend
 
 const UA = { 'User-Agent': 'Mozilla/5.0 (compatible; JanApp/1.0; personal-dashboard)' };
 
-let cache = { savings: null, mortgage: null, ts: 0, error: null };
+/* Per bron een eigen fout + "laatst gelukt"-tijd: de twee scrapes zijn
+   onafhankelijk, dus als alleen de hypotheekpagina breekt moet de spaarkaart
+   niet meegemarkeerd worden. okAt is expliciet de laatste geslaagde parse
+   (ts is slechts de laatste póging) — daarmee kan de UI verouderde data
+   herkennen, ook als er nooit een harde fout optrad. */
+let cache = {
+  savings: null,
+  mortgage: null,
+  savingsError: null,
+  mortgageError: null,
+  savingsOkAt: 0,
+  mortgageOkAt: 0,
+  ts: 0,
+};
 
 /* ---------- geschiedenis (voor de indicatieve trendgrafiek) ---------- */
 const upsertHistory = db.prepare(
@@ -114,41 +127,65 @@ async function refresh(broadcast) {
   const today = todayStr();
   let savings = null;
   let mortgage = null;
-  let error = null;
+  let savingsError = null;
+  let mortgageError = null;
 
   try {
     savings = parseSavings(await fetchHtml(SAVINGS_URL));
+    // Een lege parse is géén succes: de pagina laadde (HTTP 200), maar de
+    // tabel is niet meer te vinden. Zonder deze check bleef de oude waarde
+    // stil staan en merkte je nooit dat de scraper stuk was.
+    if (!savings) throw new Error('spaartabel niet gevonden — site-structuur gewijzigd?');
   } catch (err) {
-    error = `sparrente: ${err.message || err}`;
+    savingsError = String(err.message || err);
   }
   try {
     mortgage = parseMortgage(await fetchHtml(MORTGAGE_URL));
+    if (!mortgage) throw new Error('hypotheektabel niet gevonden — site-structuur gewijzigd?');
   } catch (err) {
-    error = error ? `${error}; hypotheekrente: ${err.message || err}` : `hypotheekrente: ${err.message || err}`;
-  }
-  if (!savings && !mortgage && !error) {
-    error = 'kon geen van beide tabellen vinden — site-structuur gewijzigd?';
+    mortgageError = String(err.message || err);
   }
 
   if (savings) upsertHistory.run('savings', today, savings.rate);
   if (mortgage) upsertHistory.run('mortgage_abn_10y', today, mortgage.rate);
 
-  // Eén van de twee kan missen zonder de andere te verliezen.
+  const now = Date.now();
+  // Eén van de twee kan missen zonder de andere te verliezen: bij een fout
+  // blijft de laatst bekende waarde staan, maar okAt schuift niet mee — zo
+  // ziet de UI hoe oud die waarde inmiddels is.
   cache = {
     savings: savings || cache.savings,
     mortgage: mortgage || cache.mortgage,
-    ts: Date.now(),
-    error,
+    savingsError,
+    mortgageError,
+    savingsOkAt: savings ? now : cache.savingsOkAt,
+    mortgageOkAt: mortgage ? now : cache.mortgageOkAt,
+    ts: now,
   };
-  if (broadcast) broadcast('rates:update', { generated_at: Date.now() });
+  if (savingsError) console.error('[rates] sparrente:', savingsError);
+  if (mortgageError) console.error('[rates] hypotheekrente:', mortgageError);
+  if (broadcast) broadcast('rates:update', { generated_at: now });
 }
 
 function snapshot() {
   return {
-    savings: cache.savings ? { ...cache.savings, spark: historySpark('savings') } : null,
-    mortgage: cache.mortgage ? { ...cache.mortgage, spark: historySpark('mortgage_abn_10y') } : null,
+    savings: cache.savings
+      ? { ...cache.savings, spark: historySpark('savings'), ok_at: cache.savingsOkAt || null }
+      : null,
+    mortgage: cache.mortgage
+      ? { ...cache.mortgage, spark: historySpark('mortgage_abn_10y'), ok_at: cache.mortgageOkAt || null }
+      : null,
+    savings_error: cache.savingsError,
+    mortgage_error: cache.mortgageError,
     updated_at: cache.ts || null,
-    error: cache.error,
+    // Gecombineerd, voor logging/algemene meldingen.
+    error:
+      [
+        cache.savingsError && `sparrente: ${cache.savingsError}`,
+        cache.mortgageError && `hypotheekrente: ${cache.mortgageError}`,
+      ]
+        .filter(Boolean)
+        .join('; ') || null,
     source: 'actuelerentestanden.nl',
   };
 }

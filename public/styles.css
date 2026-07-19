@@ -8,6 +8,9 @@
   --muted: #6b7280;
   --accent: #2563eb;
   --accent-text: #ffffff;
+  /* Waarschuwing (scraper stuk / data oud). Licht thema krijgt een donkerder
+     amber: de heldere variant leest op wit te vaag voor kleine tekst. */
+  --warn: #b45309;
   --nav-h: 60px;
   --sidebar-w: 160px;
   color-scheme: light;
@@ -25,6 +28,7 @@
     --muted: #8b909a;
     --accent: #3b82f6;
     --accent-text: #ffffff;
+    --warn: #f59e0b;
     color-scheme: dark;
   }
 }
@@ -36,6 +40,7 @@
   --muted: #8b909a;
   --accent: #3b82f6;
   --accent-text: #ffffff;
+  --warn: #f59e0b;
   color-scheme: dark;
 }
 
@@ -526,6 +531,19 @@ main {
   color: var(--muted);
   font-style: italic;
 }
+/* Signaal dat een best-effort scraper faalde of de data oud is: de getoonde
+   waarde klopt dan mogelijk niet meer. Amber leest in beide thema's als
+   "let op" zonder zo hard te schreeuwen als rood (dat is hier trend-omlaag). */
+.kpi-warn,
+.widget-warn {
+  color: var(--warn);
+  cursor: help;
+}
+.widget-warn {
+  display: block;
+  font-size: 0.75rem;
+  margin-bottom: 6px;
+}
 
 .link-btn {
   align-self: flex-start;
@@ -726,7 +744,7 @@ main {
 .message.editing { width: min(680px, 90%); }
 
 /* =====================================================================
-   To-do view: quick-add, filterbalk, labels, items, done-sectie
+   To-do view: quick-add, filterbalk, labels, items
    ===================================================================== */
 #todo-view { gap: 8px; }
 
@@ -882,7 +900,7 @@ main {
 .chip.selected .chip-dot { background: #fff; }
 
 /* To-do item — condensed, alles op één rij */
-#todos, #done-todos { gap: 4px; }
+#todos { gap: 4px; }
 
 .todo {
   display: flex;
@@ -916,10 +934,6 @@ main {
   word-break: break-word;
   line-height: 1.35;
 }
-.todo.done .todo-text {
-  text-decoration: line-through;
-  color: var(--muted);
-}
 .todo-chips {
   display: flex;
   flex-wrap: wrap;
@@ -951,7 +965,7 @@ main {
 
 /* Open to-do's zijn sleepbaar (ingedrukt houden, zie enableTodoDrag) — de
    cursor hint dat al vóór je begint te slepen. Niet op de knoppen zelf. */
-.todo:not(.done) { cursor: grab; user-select: none; }
+.todo { cursor: grab; user-select: none; }
 .todo.todo-dragging {
   cursor: grabbing;
   opacity: 0.6;
@@ -1011,22 +1025,6 @@ main {
   color: var(--muted);
   font-style: italic;
 }
-
-/* Afgerond-sectie */
-#done-section {
-  margin-top: 8px;
-}
-#done-section summary {
-  cursor: pointer;
-  padding: 6px 4px;
-  color: var(--muted);
-  font-weight: 600;
-  font-size: 0.9rem;
-  list-style: none;
-}
-#done-section summary::-webkit-details-marker { display: none; }
-#done-section summary::before { content: "▸ "; margin-right: 2px; }
-#done-section[open] summary::before { content: "▾ "; }
 
 /* =====================================================================
    Composer (leeft binnen chat-view)

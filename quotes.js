@@ -32,7 +32,14 @@ const { db, DATA_DIR } = require('./db');
 const TD_KEY = () => process.env.TWELVEDATA_API_KEY || '';
 const EOD_KEY = () => process.env.EODHD_API_KEY || '';
 
-const REFRESH_MS = 15 * 60 * 1000;   // hele watchlist elke 15 min
+/* Elk uur de hele watchlist. Bewust níet vaker: dit dashboard is bedoeld om
+   "hoe staat het er vandaag voor" te tonen, niet om tick-by-tick te volgen
+   (daar is TradingView voor). Bovendien is het gratis Twelve Data-plan 800
+   credits/dag: met ~16 TD-symbolen kostte de oude 15-minuten-stand ~1.400
+   credits/dag, waardoor het quotum halverwege de dag opraakte en de koersen
+   stilletjes stopten met updaten. Op uurbasis is dat ~380/dag — ruim binnen
+   de limiet, en tijdens open beurs nooit ouder dan een uur. */
+const REFRESH_MS = 60 * 60 * 1000;   // hele watchlist elk uur
 const TD_PER_MIN = 8;                // gratis plan: 8 credits/minuut
 const HISTORY_DAYS = 420;            // ruim genoeg voor 63 handelsdagen + YTD
 

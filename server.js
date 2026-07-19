@@ -259,9 +259,13 @@ function setTodoLabels(todoId, labelIds) {
 // betrouwbaar goed contrasteren (zie color-mix() in styles.css).
 const TODO_COLORS = ['#ef4444', '#f97316', '#22c55e', '#3b82f6', '#8b5cf6'];
 
+/* Afvinken bestaat niet meer als workflow (klaar = verwijderen), dus done kan
+   sinds die wijziging niet meer op 1 gezet worden. Eventuele historische
+   afgevinkte rijen blijven onaangeroerd in de database staan, maar worden niet
+   meer getoond — vandaar het filter hier i.p.v. ze te verwijderen. */
 app.get('/api/todos', (req, res) => {
   // Twee queries, geen N+1: één voor todos, één voor alle todo_labels-joins.
-  const todos = db.prepare('SELECT * FROM todos ORDER BY position ASC, id DESC').all();
+  const todos = db.prepare('SELECT * FROM todos WHERE done = 0 ORDER BY position ASC, id DESC').all();
   const rows = db
     .prepare(
       `SELECT tl.todo_id, l.id, l.name, l.color
@@ -307,26 +311,17 @@ app.patch('/api/todos/:id', (req, res) => {
     return res.status(404).json({ error: 'To-do niet gevonden.' });
   }
 
-  const hasDone = typeof req.body.done === 'boolean';
   const hasText = typeof req.body.text === 'string';
   const hasLabels = Array.isArray(req.body.labels);
   const hasColor = 'color' in req.body;
-  if (!hasDone && !hasText && !hasLabels && !hasColor) {
+  if (!hasText && !hasLabels && !hasColor) {
     return res.status(400).json({ error: 'Niets om bij te werken.' });
   }
   if (hasColor && req.body.color !== null && !TODO_COLORS.includes(req.body.color)) {
     return res.status(400).json({ error: 'Ongeldige kleur.' });
   }
 
-  // Afvinken/uitvinken: raakt done + completed_at, niet de tekst.
-  if (hasDone) {
-    const done = req.body.done ? 1 : 0;
-    const completedAt = done ? Date.now() : null;
-    db.prepare('UPDATE todos SET done = ?, completed_at = ? WHERE id = ?')
-      .run(done, completedAt, id);
-  }
-
-  // Tekst bewerken: raakt text + edited_at, niet done/completed_at.
+  // Tekst bewerken: raakt text + edited_at.
   if (hasText) {
     const text = req.body.text.trim();
     if (!text) {
@@ -336,22 +331,18 @@ app.patch('/api/todos/:id', (req, res) => {
       .run(text, Date.now(), id);
   }
 
-  // Label-set vervangen. Blijft los van text/done zoals de spec vereist.
+  // Label-set vervangen. Blijft los van de tekst zoals de spec vereist.
   if (hasLabels) {
     setTodoLabels(id, req.body.labels);
   }
 
-  // Kaart-kleur: los van tekst/done/labels, null wist 'm weer.
+  // Kaart-kleur: los van tekst/labels, null wist 'm weer.
   if (hasColor) {
     db.prepare('UPDATE todos SET color = ? WHERE id = ?').run(req.body.color, id);
   }
 
   const updated = getTodoWithLabels(id);
-  // Bij een enkelvoudige toggle (geen tekst/labels/kleur) blijft het
-  // semantisch een toggle-event; andere clients tonen dan evt. een aparte
-  // animatie.
-  const event = hasDone && !hasText && !hasLabels && !hasColor ? 'todo:toggle' : 'todo:edit';
-  broadcast(event, updated);
+  broadcast('todo:edit', updated);
   res.json(updated);
 });
 
@@ -443,8 +434,14 @@ app.post('/api/todos/reorder', (req, res) => {
   if (!ids || ids.some((n) => !Number.isInteger(n))) {
     return res.status(400).json({ error: 'Ongeldige volgorde.' });
   }
+  /* Subset-validatie i.p.v. "exact alle rijen": de client kent alleen de
+     zichtbare (niet-afgevinkte) to-do's. Historische afgevinkte rijen zitten
+     nog wél in de tabel, dus een exacte match zou hier altijd 409'en. We
+     eisen daarom alleen dat elk ingestuurd id bestaat en uniek is; rijen die
+     niet meegestuurd worden houden hun huidige positie (ze worden toch niet
+     getoond). */
   const known = new Set(db.prepare('SELECT id FROM todos').all().map((r) => r.id));
-  if (ids.length !== known.size || !ids.every((n) => known.has(n))) {
+  if (!ids.length || new Set(ids).size !== ids.length || !ids.every((n) => known.has(n))) {
     return res.status(409).json({ error: 'Volgorde komt niet overeen met de to-do-lijst.' });
   }
   const upd = db.prepare('UPDATE todos SET position = ? WHERE id = ?');

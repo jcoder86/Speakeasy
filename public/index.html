@@ -62,7 +62,7 @@
               <div class="kpi-sub">Watchlist-gem. (1w)</div>
             </div>
             <div class="kpi-card">
-              <div class="kpi-label">Sparrente (EU)</div>
+              <div class="kpi-label">Sparrente (EU) <span class="kpi-warn" id="kpi-savings-warn" hidden>⚠</span></div>
               <div class="kpi-value-row">
                 <div class="kpi-value" id="kpi-savings-value">–</div>
                 <div class="kpi-spark" id="kpi-savings-spark"></div>
@@ -70,7 +70,7 @@
               <div class="kpi-sub" id="kpi-savings-sub"></div>
             </div>
             <div class="kpi-card">
-              <div class="kpi-label">Hypotheekrente</div>
+              <div class="kpi-label">Hypotheekrente <span class="kpi-warn" id="kpi-mortgage-warn" hidden>⚠</span></div>
               <div class="kpi-value-row">
                 <div class="kpi-value" id="kpi-mortgage-value">–</div>
                 <div class="kpi-spark" id="kpi-mortgage-spark"></div>
@@ -194,11 +194,6 @@
 
           <div id="todos" class="list"></div>
           <p id="todo-empty" class="empty-hint">Nog geen to-do's.</p>
-
-          <details id="done-section" open>
-            <summary>Afgerond (<span id="done-count">0</span>)</summary>
-            <div id="done-todos" class="list"></div>
-          </details>
         </section>
 
         <section id="watchlist-view" class="view">

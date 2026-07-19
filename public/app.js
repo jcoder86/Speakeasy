@@ -2,9 +2,6 @@
 
 const messagesEl = document.getElementById('messages');
 const openTodosEl = document.getElementById('todos');
-const doneTodosEl = document.getElementById('done-todos');
-const doneCountEl = document.getElementById('done-count');
-const doneSectionEl = document.getElementById('done-section');
 const todoEmptyEl = document.getElementById('todo-empty');
 const todoAddForm = document.getElementById('todo-add-form');
 const todoAddInput = document.getElementById('todo-add-input');
@@ -44,6 +41,8 @@ const kpiMortgageValueEl = document.getElementById('kpi-mortgage-value');
 const kpiMortgageSubEl = document.getElementById('kpi-mortgage-sub');
 const kpiSavingsSparkEl = document.getElementById('kpi-savings-spark');
 const kpiMortgageSparkEl = document.getElementById('kpi-mortgage-spark');
+const kpiSavingsWarnEl = document.getElementById('kpi-savings-warn');
+const kpiMortgageWarnEl = document.getElementById('kpi-mortgage-warn');
 const kpiOilValueEl = document.getElementById('kpi-oil-value');
 const kpiOilSubEl = document.getElementById('kpi-oil-sub');
 const kpiOilSparkEl = document.getElementById('kpi-oil-spark');
@@ -1114,7 +1113,7 @@ function renderHomeStocksAndMovers() {
 }
 
 /* ---------- Biggest movers — bewust buiten je watchlist, zie movers.js --------- */
-let moversCache = { gainers: [], losers: [], error: null };
+let moversCache = { gainers: [], losers: [], error: null, okAt: null };
 
 function buildMoversList(title, list) {
   const col = document.createElement('div');
@@ -1155,6 +1154,20 @@ function buildMoversList(title, list) {
 function renderMovers() {
   if (!homeMoversEl) return;
   homeMoversEl.innerHTML = '';
+
+  const warn = staleWarning({
+    error: moversCache.error,
+    okAt: moversCache.okAt,
+    maxAgeMs: MOVERS_MAX_AGE_MS,
+  });
+  if (warn) {
+    const w = document.createElement('div');
+    w.className = 'widget-warn';
+    w.textContent = '⚠ Movers mogelijk verouderd';
+    w.title = warn;
+    homeMoversEl.appendChild(w);
+  }
+
   if (moversCache.gainers.length === 0 && moversCache.losers.length === 0) {
     const p = document.createElement('p');
     p.className = 'muted-hint';
@@ -1175,9 +1188,14 @@ async function loadMovers() {
   try {
     const res = await fetch('/api/movers');
     const data = await res.json();
-    moversCache = { gainers: data.gainers || [], losers: data.losers || [], error: data.error };
+    moversCache = {
+      gainers: data.gainers || [],
+      losers: data.losers || [],
+      error: data.error,
+      okAt: data.ok_at || null,
+    };
   } catch {
-    moversCache = { gainers: [], losers: [], error: 'geen verbinding' };
+    moversCache = { gainers: [], losers: [], error: 'geen verbinding', okAt: null };
   }
   renderMovers();
 }
@@ -1216,6 +1234,39 @@ function renderHomeNews() {
 // app draait (geen gratis historische-rente-API bestaat) — pas na enkele
 // weken tot maanden wordt hij echt betekenisvol. sparklineSvg tekent sowieso
 // pas vanaf 3 datapunten, dus in het begin blijft de kaart bewust leeg.
+/* ---------- Scraper-gezondheid ----------
+ * De rentes en movers komen van best-effort scrapers: die kunnen stil breken
+ * als de bron zijn HTML wijzigt. De laatst bekende waarde blijft dan gewoon
+ * staan, dus zonder signaal zou je maandenlang naar verouderde cijfers kunnen
+ * kijken zonder het door te hebben. Deze helpers zetten een ⚠ met uitleg
+ * zodra de laatste ophaalpoging faalde óf de data ouder is dan verwacht. */
+function fmtWhen(ts) {
+  if (!ts) return 'nog nooit';
+  return new Date(ts).toLocaleString('nl-NL', {
+    day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit',
+  });
+}
+
+function staleWarning({ error, okAt, maxAgeMs }) {
+  if (error) return `Bijwerken mislukt: ${error} — laatst gelukt: ${fmtWhen(okAt)}.`;
+  if (!okAt) return 'Nog niet opgehaald.';
+  if (Date.now() - okAt > maxAgeMs) {
+    return `Mogelijk verouderd — laatst bijgewerkt: ${fmtWhen(okAt)}.`;
+  }
+  return null;
+}
+
+function applyWarn(el, msg) {
+  if (!el) return;
+  el.hidden = !msg;
+  el.title = msg || '';
+}
+
+// Rentes ververst de server 1x per dag; 2 dagen geeft één gemiste ronde speling.
+const RATES_MAX_AGE_MS = 48 * 60 * 60 * 1000;
+// Movers elke 30 min; 3 uur betekent dat er meerdere rondes zijn overgeslagen.
+const MOVERS_MAX_AGE_MS = 3 * 60 * 60 * 1000;
+
 function buildRateArrow(cls, symbol, title) {
   const arrow = document.createElement('span');
   arrow.className = 'rate-trend-arrow ' + cls;
@@ -1261,19 +1312,33 @@ async function loadRates() {
       renderRateSpark(kpiSavingsSparkEl, data.savings.spark);
     } else {
       kpiSavingsValueEl.textContent = '–';
-      kpiSavingsSubEl.textContent = data.error ? 'Niet beschikbaar' : 'Laden…';
+      kpiSavingsSubEl.textContent = data.savings_error ? 'Niet beschikbaar' : 'Laden…';
     }
+    applyWarn(kpiSavingsWarnEl, staleWarning({
+      error: data.savings_error,
+      okAt: data.savings && data.savings.ok_at,
+      maxAgeMs: RATES_MAX_AGE_MS,
+    }));
+
     if (data.mortgage) {
       kpiMortgageValueEl.textContent = data.mortgage.rate.toLocaleString('nl-NL', { minimumFractionDigits: 2 }) + '%';
       kpiMortgageSubEl.textContent = `${data.mortgage.years}j vast NHG · ${data.mortgage.bank}`;
       renderRateSpark(kpiMortgageSparkEl, data.mortgage.spark);
     } else {
       kpiMortgageValueEl.textContent = '–';
-      kpiMortgageSubEl.textContent = data.error ? 'Niet beschikbaar' : 'Laden…';
+      kpiMortgageSubEl.textContent = data.mortgage_error ? 'Niet beschikbaar' : 'Laden…';
     }
+    applyWarn(kpiMortgageWarnEl, staleWarning({
+      error: data.mortgage_error,
+      okAt: data.mortgage && data.mortgage.ok_at,
+      maxAgeMs: RATES_MAX_AGE_MS,
+    }));
   } catch {
     kpiSavingsSubEl.textContent = 'Niet beschikbaar';
     kpiMortgageSubEl.textContent = 'Niet beschikbaar';
+    const offline = 'Rentes niet op te halen — geen verbinding met de server.';
+    applyWarn(kpiSavingsWarnEl, offline);
+    applyWarn(kpiMortgageWarnEl, offline);
   }
 }
 
@@ -1291,12 +1356,10 @@ homeTodoAddForm.addEventListener('submit', async (e) => {
 const labels = new Map();  // id -> {id, name, color}
 const filter = new Set();  // actieve label-ids (leeg = geen filter)
 
-// Een todo staat als los DOM-element in één of meer containers: open items
-// staan zowel op de volledige to-do-pagina als (ongefilterd) in het
-// Home-widget, afgeronde items alleen op de volledige pagina (Home toont
-// nooit afgeronde items).
-function containersFor(todo) {
-  return todo.done ? [doneTodosEl] : [openTodosEl, homeTodosListEl];
+// Een todo staat als los DOM-element in twee containers tegelijk: de
+// volledige to-do-pagina en (ongefilterd) het Home-widget.
+function containersFor() {
+  return [openTodosEl, homeTodosListEl];
 }
 
 // Alle DOM-instanties van één todo (kan er 0, 1 of 2 zijn, zie hierboven).
@@ -1310,10 +1373,10 @@ function todoMatchesFilter(todo) {
 }
 
 // Filter geldt alleen voor de volledige to-do-pagina — Home heeft geen
-// eigen filterbalk en toont altijd de complete open-lijst, dus expliciet
-// scopen op openTodosEl/doneTodosEl i.p.v. alle .todo-elementen globaal.
+// eigen filterbalk en toont altijd de complete lijst, dus expliciet scopen
+// op openTodosEl i.p.v. alle .todo-elementen globaal.
 function applyFilter() {
-  for (const el of [...openTodosEl.querySelectorAll('.todo'), ...doneTodosEl.querySelectorAll('.todo')]) {
+  for (const el of openTodosEl.querySelectorAll('.todo')) {
     const todo = todos.get(Number(el.dataset.id));
     if (todo) el.classList.toggle('filtered-out', !todoMatchesFilter(todo));
   }
@@ -1321,20 +1384,13 @@ function applyFilter() {
 }
 
 function updateEmptyStates() {
-  let openCount = 0;
-  let doneCount = 0;
+  let visibleCount = 0;
   for (const t of todos.values()) {
-    if (!todoMatchesFilter(t)) continue;
-    if (t.done) doneCount += 1;
-    else openCount += 1;
+    if (todoMatchesFilter(t)) visibleCount += 1;
   }
-  todoEmptyEl.hidden = openCount > 0;
-  doneCountEl.textContent = String(doneCount);
-  doneSectionEl.hidden = doneCount === 0;
-
-  // Home telt ALLE open to-do's, filter-onafhankelijk (geen filterbalk daar).
-  const totalOpen = [...todos.values()].filter((t) => !t.done).length;
-  homeTodosEmptyEl.hidden = totalOpen > 0;
+  todoEmptyEl.hidden = visibleCount > 0;
+  // Home toont altijd de complete lijst, filter-onafhankelijk.
+  homeTodosEmptyEl.hidden = todos.size > 0;
 }
 
 /* ---------- Chip-helper ---------- */
@@ -1469,7 +1525,6 @@ function buildTodoEl(todo) {
 function renderTodoView(el, todo) {
   el.innerHTML = '';
   el.classList.remove('editing');
-  el.classList.toggle('done', !!todo.done);
 
   // Kaart-kleur (optioneel, via bewerken): custom property + data-attribuut
   // als CSS-haakje, color-mix() in styles.css zorgt voor goed contrast in
@@ -1596,26 +1651,21 @@ function renderTodoEdit(el, todo) {
 function addTodo(todo) {
   todos.set(todo.id, todo);
   for (const el of allTodoEls(todo.id)) el.remove(); // defensief
-  for (const container of containersFor(todo)) container.prepend(buildTodoEl(todo));
+  for (const container of containersFor()) container.prepend(buildTodoEl(todo));
   applyFilter();
 }
 
 function updateTodo(todo) {
-  const prev = todos.get(todo.id);
   todos.set(todo.id, todo);
   const existingEls = allTodoEls(todo.id);
   if (existingEls.some((el) => el.classList.contains('editing'))) return; // niet clobberen
 
-  if (existingEls.length && prev && !!prev.done !== !!todo.done) {
-    // Done-state gewisseld → uit alle containers halen en opnieuw plaatsen.
-    for (const el of existingEls) el.remove();
-    for (const container of containersFor(todo)) container.prepend(buildTodoEl(todo));
-  } else if (existingEls.length) {
+  if (existingEls.length) {
     // In-place her-renderen op elke plek waar het item al staat, zodat de
     // positie in de lijst behouden blijft.
     for (const el of existingEls) renderTodoView(el, todo);
   } else {
-    for (const container of containersFor(todo)) container.prepend(buildTodoEl(todo));
+    for (const container of containersFor()) container.prepend(buildTodoEl(todo));
   }
   applyFilter();
 }
@@ -1631,11 +1681,10 @@ async function loadTodos() {
   const rows = await res.json(); // op position
   todos.clear();
   openTodosEl.innerHTML = '';
-  doneTodosEl.innerHTML = '';
   homeTodosListEl.innerHTML = '';
   for (const t of rows) {
     todos.set(t.id, t);
-    for (const container of containersFor(t)) container.appendChild(buildTodoEl(t));
+    for (const container of containersFor()) container.appendChild(buildTodoEl(t));
   }
   applyFilter();
 }
@@ -1676,7 +1725,7 @@ function enableTodoDrag(el, getTodo) {
 
   function onPointerDown(e) {
     const todo = getTodo();
-    if (!todo || todo.done) return; // afgeronde items zijn niet sleepbaar
+    if (!todo) return;
     if (e.target.closest('button, textarea, input, a')) return; // knoppen ongemoeid laten
     if (e.pointerType === 'mouse' && e.button !== 0) return;
     // Zonder dit selecteert de browser de tekst waar de muis overheen sleept
@@ -1738,13 +1787,12 @@ function enableTodoDrag(el, getTodo) {
     document.removeEventListener('pointermove', onDragMove);
 
     const container = el.parentElement;
-    const openIdsInContainer = [...container.querySelectorAll(':scope > .todo')].map((n) => Number(n.dataset.id));
-    const doneIds = [...todos.values()].filter((t) => t.done).map((t) => t.id);
+    const ids = [...container.querySelectorAll(':scope > .todo')].map((n) => Number(n.dataset.id));
     try {
       await fetch('/api/todos/reorder', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ids: [...openIdsInContainer, ...doneIds] }),
+        body: JSON.stringify({ ids }),
       });
       // Server broadcast todo:reorder → loadTodos() ververst beide
       // containers (hoofdpagina + Home) consistent met de nieuwe volgorde.
@@ -1784,19 +1832,6 @@ async function createTodo(text, labelIds) {
   } catch {
     alert('Toevoegen mislukt: geen verbinding.');
     return false;
-  }
-}
-
-async function toggleTodo(id, done) {
-  try {
-    const res = await fetch(`/api/todos/${id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ done }),
-    });
-    if (!res.ok) alert(await apiError(res));
-  } catch {
-    alert('Bijwerken mislukt: geen verbinding.');
   }
 }
 
@@ -1897,7 +1932,6 @@ function connectSSE() {
   source.addEventListener('message:delete', (e) => removeMessage(JSON.parse(e.data).id));
   source.addEventListener('todo:new', (e) => addTodo(JSON.parse(e.data)));
   source.addEventListener('todo:edit', (e) => updateTodo(JSON.parse(e.data)));
-  source.addEventListener('todo:toggle', (e) => updateTodo(JSON.parse(e.data)));
   source.addEventListener('todo:delete', (e) => removeTodo(JSON.parse(e.data).id));
   source.addEventListener('todo:reorder', () => {
     // volgorde elders gewijzigd → serverwaarheid ophalen en opnieuw tekenen
@@ -1956,8 +1990,10 @@ loadMovers();
 connectSSE();
 setView('home'); // default: dashboard/home
 
-// Koersen elke 60s (matcht server-cache).
-setInterval(loadQuotes, 60 * 1000);
+// Koersen elke 5 min ophalen. De server ververst zelf nog maar 1x per uur en
+// duwt dat via SSE (quotes:update), dus dit is puur een vangnet als die push
+// gemist wordt — vaker pollen levert simpelweg hetzelfde snapshot op.
+setInterval(loadQuotes, 5 * 60 * 1000);
 // Nieuws elke 15 min (matcht server-cache 15 min).
 setInterval(loadStockNews, 15 * 60 * 1000);
 setInterval(loadFeedNews, 15 * 60 * 1000);

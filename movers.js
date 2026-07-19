@@ -32,7 +32,9 @@ const PER_COLUMN = 3;
 
 const UA = { 'User-Agent': 'Mozilla/5.0 (compatible; JanApp/1.0; personal-dashboard)' };
 
-let cache = { gainers: [], losers: [], ts: 0, error: null };
+// okAt = laatste geslaagde scrape (ts = laatste póging). Bij een fout blijven
+// de oude rijen staan; okAt verraadt dan hoe oud ze inmiddels zijn.
+let cache = { gainers: [], losers: [], ts: 0, okAt: 0, error: null };
 
 function parseMarketCap(str) {
   const m = String(str).match(/([\d.]+)\s*([KMBT])/i);
@@ -107,9 +109,12 @@ async function refresh(broadcast) {
     const gainers = filterAndRank(gainersAll, watchlistTickers, true);
     const losers = filterAndRank(losersAll, watchlistTickers, false);
 
-    cache = { gainers, losers, ts: Date.now(), error: null };
+    const now = Date.now();
+    cache = { gainers, losers, ts: now, okAt: now, error: null };
   } catch (err) {
-    cache = { ...cache, error: String(err.message || err) };
+    const error = String(err.message || err);
+    console.error('[movers] scrape mislukt:', error);
+    cache = { ...cache, ts: Date.now(), error };
   }
   if (broadcast) broadcast('movers:update', { generated_at: Date.now() });
 }
@@ -119,6 +124,7 @@ function snapshot() {
     gainers: cache.gainers,
     losers: cache.losers,
     updated_at: cache.ts || null,
+    ok_at: cache.okAt || null,
     error: cache.error,
     source: 'stockanalysis.com',
   };
