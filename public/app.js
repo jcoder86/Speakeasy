@@ -42,6 +42,8 @@ const kpiSavingsValueEl = document.getElementById('kpi-savings-value');
 const kpiSavingsSubEl = document.getElementById('kpi-savings-sub');
 const kpiMortgageValueEl = document.getElementById('kpi-mortgage-value');
 const kpiMortgageSubEl = document.getElementById('kpi-mortgage-sub');
+const kpiSavingsSparkEl = document.getElementById('kpi-savings-spark');
+const kpiMortgageSparkEl = document.getElementById('kpi-mortgage-spark');
 const homeStocksExcerptEl = document.getElementById('home-stocks-excerpt');
 const homeMoversEl = document.getElementById('home-movers');
 const homeNewsStocksEl = document.getElementById('home-news-stocks');
@@ -466,8 +468,8 @@ function deltaCell(row, value, extraClass) {
 // Compacte sparkline als inline-SVG. Kleur volgt de trend (groen op/rood neer),
 // zodat hij aansluit bij de percentages ernaast.
 const SVG_NS = 'http://www.w3.org/2000/svg';
-function sparklineSvg(closes) {
-  const w = 120;
+function sparklineSvg(closes, width) {
+  const w = width || 120;
   const h = 22;
   const pad = 2;
   const svg = document.createElementNS(SVG_NS, 'svg');
@@ -524,7 +526,7 @@ function buildQuotesThead() {
 
 // Eén rij van de koerstabel — alle kolommen (koers, 1d/1w/1m/3m/YTD,
 // sparkline). Gedeeld tussen de volledige Aandelen-tabel en het Home-excerpt.
-function buildQuoteRow(item, q) {
+function buildQuoteRow(item, q, sparkWidth) {
   const row = document.createElement('tr');
   row.dataset.ticker = item.ticker;
 
@@ -561,7 +563,7 @@ function buildQuoteRow(item, q) {
     // sparkline (30 handelsdagen), kleur volgt de 1m-trend
     const sp = document.createElement('td');
     sp.className = 'q-hide-sm q-spark';
-    sp.appendChild(sparklineSvg(q.spark));
+    sp.appendChild(sparklineSvg(q.spark, sparkWidth));
     row.appendChild(sp);
   } else {
     const td = document.createElement('td');
@@ -1006,7 +1008,6 @@ async function loadFeedNews() {
    =================================================================== */
 // Alleen nieuws wordt afgekapt (headlines + "Meer nieuws"-link) — aandelen
 // en to-do's tonen hun volledige lijst, die is doorgaans kort genoeg.
-const HOME_MOVERS_COUNT = 3;
 const HOME_NEWS_COUNT = 3;
 
 // Compacte rij: ticker + naam + koers + 1d-delta. Geen groepskopjes/sparkline
@@ -1031,33 +1032,18 @@ function renderHomeStocksAndMovers() {
     table.appendChild(buildQuotesThead());
     const tbody = document.createElement('tbody');
     for (const item of items) {
-      tbody.appendChild(buildQuoteRow(item, quotesById.get(item.ticker)));
+      // Bredere sparkline: deze kolom heeft door de 4fr-breedte van het
+      // Home-grid meer ruimte dan de volledige Aandelen-pagina.
+      tbody.appendChild(buildQuoteRow(item, quotesById.get(item.ticker), 170));
     }
     table.appendChild(tbody);
     homeStocksExcerptEl.appendChild(table);
   }
 
-  // Biggest movers — binnen de watchlist (zie plan: bredere movers-universe
-  // volgt in fase 10). Sorteert op 1d-delta, alleen tickers met bekende koers.
-  homeMoversEl.innerHTML = '';
-  const withDelta = [...quotesById.values()].filter(
-    (q) => q && q.price !== null && typeof q.deltas?.d1 === 'number',
-  );
-  if (withDelta.length === 0) {
-    const p = document.createElement('p');
-    p.className = 'muted-hint';
-    p.textContent = 'Nog geen koersdata voor movers.';
-    homeMoversEl.appendChild(p);
-  } else {
-    const gainers = [...withDelta].sort((a, b) => b.deltas.d1 - a.deltas.d1).slice(0, HOME_MOVERS_COUNT);
-    const losers = [...withDelta].sort((a, b) => a.deltas.d1 - b.deltas.d1).slice(0, HOME_MOVERS_COUNT);
-    const grid = document.createElement('div');
-    grid.className = 'movers-grid';
-    grid.appendChild(buildMoversList('Grootste stijgers', gainers));
-    grid.appendChild(buildMoversList('Grootste dalers', losers));
-    homeMoversEl.appendChild(grid);
-  }
 }
+
+/* ---------- Biggest movers — bewust buiten je watchlist, zie movers.js --------- */
+let moversCache = { gainers: [], losers: [], error: null };
 
 function buildMoversList(title, list) {
   const col = document.createElement('div');
@@ -1066,20 +1052,63 @@ function buildMoversList(title, list) {
   h.className = 'movers-col-title';
   h.textContent = title;
   col.appendChild(h);
-  for (const q of list) {
+  if (list.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'movers-row muted-hint';
+    empty.textContent = 'Geen gevonden';
+    col.appendChild(empty);
+  }
+  for (const s of list) {
     const row = document.createElement('div');
     row.className = 'movers-row';
+    const wrap = document.createElement('span');
+    wrap.className = 'q-name';
     const sym = document.createElement('span');
     sym.className = 'q-sym';
-    sym.textContent = q.ticker;
-    row.appendChild(sym);
+    sym.textContent = s.ticker;
+    wrap.appendChild(sym);
+    const co = document.createElement('span');
+    co.className = 'q-co';
+    co.textContent = s.name || '';
+    wrap.appendChild(co);
+    row.appendChild(wrap);
     const d = document.createElement('span');
-    d.className = trendClass(q.deltas.d1);
-    d.textContent = pct(q.deltas.d1);
+    d.className = trendClass(s.changePct);
+    d.textContent = pct(s.changePct / 100);
     row.appendChild(d);
     col.appendChild(row);
   }
   return col;
+}
+
+function renderMovers() {
+  if (!homeMoversEl) return;
+  homeMoversEl.innerHTML = '';
+  if (moversCache.gainers.length === 0 && moversCache.losers.length === 0) {
+    const p = document.createElement('p');
+    p.className = 'muted-hint';
+    p.textContent = moversCache.error ? 'Movers niet beschikbaar.' : 'Movers laden…';
+    homeMoversEl.appendChild(p);
+    return;
+  }
+  const grid = document.createElement('div');
+  grid.className = 'movers-grid';
+  grid.appendChild(buildMoversList('Grootste stijgers', moversCache.gainers));
+  grid.appendChild(buildMoversList('Grootste dalers', moversCache.losers));
+  homeMoversEl.appendChild(grid);
+}
+
+// Bewust buiten je watchlist (die zie je al in "Mijn aandelen" hierboven) —
+// server filtert al op marktkapitalisatie + sluit je eigen tickers uit.
+async function loadMovers() {
+  try {
+    const res = await fetch('/api/movers');
+    const data = await res.json();
+    moversCache = { gainers: data.gainers || [], losers: data.losers || [], error: data.error };
+  } catch {
+    moversCache = { gainers: [], losers: [], error: 'geen verbinding' };
+  }
+  renderMovers();
 }
 
 function renderHomeNews() {
@@ -1110,31 +1139,18 @@ function renderHomeNews() {
 }
 
 // Simpele open-lijst (geen Vandaag/Later — vervaldatums zijn bewust geskipt).
-function renderHomeTodos() {
-  if (!homeTodosListEl) return;
-  const open = [...todos.values()].filter((t) => !t.done).sort((a, b) => b.id - a.id);
-  kpiTodosValueEl.textContent = String(open.length);
-
-  homeTodosListEl.innerHTML = '';
-  homeTodosEmptyEl.hidden = open.length > 0;
-  for (const todo of open) {
-    const row = document.createElement('div');
-    row.className = 'home-todo-row';
-    const check = document.createElement('input');
-    check.type = 'checkbox';
-    check.className = 'todo-check';
-    check.addEventListener('change', () => toggleTodo(todo.id, check.checked));
-    row.appendChild(check);
-    const text = document.createElement('span');
-    text.className = 'home-todo-text';
-    text.textContent = todo.text;
-    row.appendChild(text);
-    homeTodosListEl.appendChild(row);
-  }
-}
-
 // Sparrente/hypotheekrente-KPI's (best-effort scraper, zie rates.js op de
 // server — ververst 1x per dag, dus geen aparte poll-interval nodig hier).
+// Trendlijn is indicatief: hij bouwt zich op vanaf de eerste dag dat deze
+// app draait (geen gratis historische-rente-API bestaat) — pas na enkele
+// weken tot maanden wordt hij echt betekenisvol. sparklineSvg tekent sowieso
+// pas vanaf 3 datapunten, dus in het begin blijft de kaart bewust leeg.
+function renderRateSpark(el, spark) {
+  el.innerHTML = '';
+  if (!Array.isArray(spark) || spark.length < 3) return;
+  el.appendChild(sparklineSvg(spark, 90));
+}
+
 async function loadRates() {
   try {
     const res = await fetch('/api/rates');
@@ -1142,6 +1158,7 @@ async function loadRates() {
     if (data.savings) {
       kpiSavingsValueEl.textContent = data.savings.rate.toLocaleString('nl-NL', { minimumFractionDigits: 2 }) + '%';
       kpiSavingsSubEl.textContent = data.savings.name;
+      renderRateSpark(kpiSavingsSparkEl, data.savings.spark);
     } else {
       kpiSavingsValueEl.textContent = '–';
       kpiSavingsSubEl.textContent = data.error ? 'Niet beschikbaar' : 'Laden…';
@@ -1149,6 +1166,7 @@ async function loadRates() {
     if (data.mortgage) {
       kpiMortgageValueEl.textContent = data.mortgage.rate.toLocaleString('nl-NL', { minimumFractionDigits: 2 }) + '%';
       kpiMortgageSubEl.textContent = `${data.mortgage.years}j vast NHG · ${data.mortgage.bank}`;
+      renderRateSpark(kpiMortgageSparkEl, data.mortgage.spark);
     } else {
       kpiMortgageValueEl.textContent = '–';
       kpiMortgageSubEl.textContent = data.error ? 'Niet beschikbaar' : 'Laden…';
@@ -1173,8 +1191,17 @@ homeTodoAddForm.addEventListener('submit', async (e) => {
 const labels = new Map();  // id -> {id, name, color}
 const filter = new Set();  // actieve label-ids (leeg = geen filter)
 
-function containerFor(todo) {
-  return todo.done ? doneTodosEl : openTodosEl;
+// Een todo staat als los DOM-element in één of meer containers: open items
+// staan zowel op de volledige to-do-pagina als (ongefilterd) in het
+// Home-widget, afgeronde items alleen op de volledige pagina (Home toont
+// nooit afgeronde items).
+function containersFor(todo) {
+  return todo.done ? [doneTodosEl] : [openTodosEl, homeTodosListEl];
+}
+
+// Alle DOM-instanties van één todo (kan er 0, 1 of 2 zijn, zie hierboven).
+function allTodoEls(id) {
+  return [...document.querySelectorAll(`.todo[data-id="${id}"]`)];
 }
 
 function todoMatchesFilter(todo) {
@@ -1182,10 +1209,13 @@ function todoMatchesFilter(todo) {
   return (todo.labels || []).some((l) => filter.has(l.id));
 }
 
+// Filter geldt alleen voor de volledige to-do-pagina — Home heeft geen
+// eigen filterbalk en toont altijd de complete open-lijst, dus expliciet
+// scopen op openTodosEl/doneTodosEl i.p.v. alle .todo-elementen globaal.
 function applyFilter() {
-  for (const [id, todo] of todos) {
-    const el = document.querySelector(`.todo[data-id="${id}"]`);
-    if (el) el.classList.toggle('filtered-out', !todoMatchesFilter(todo));
+  for (const el of [...openTodosEl.querySelectorAll('.todo'), ...doneTodosEl.querySelectorAll('.todo')]) {
+    const todo = todos.get(Number(el.dataset.id));
+    if (todo) el.classList.toggle('filtered-out', !todoMatchesFilter(todo));
   }
   updateEmptyStates();
 }
@@ -1201,8 +1231,11 @@ function updateEmptyStates() {
   todoEmptyEl.hidden = openCount > 0;
   doneCountEl.textContent = String(doneCount);
   doneSectionEl.hidden = doneCount === 0;
-  // Zelfde hook-punt dekt addTodo/updateTodo (via applyFilter) én removeTodo.
-  renderHomeTodos();
+
+  // Home telt ALLE open to-do's, filter-onafhankelijk (geen filterbalk daar).
+  const totalOpen = [...todos.values()].filter((t) => !t.done).length;
+  kpiTodosValueEl.textContent = String(totalOpen);
+  homeTodosEmptyEl.hidden = totalOpen > 0;
 }
 
 /* ---------- Chip-helper ---------- */
@@ -1370,6 +1403,31 @@ function renderTodoView(el, todo) {
 
   const actions = document.createElement('div');
   actions.className = 'item-actions';
+  if (!todo.done) {
+    // Schuiven heeft alleen zin binnen de open lijst — afgeronde items zijn
+    // historisch en hoeven niet herordend te worden.
+    const openIds = [...todos.values()].filter((t) => !t.done).map((t) => t.id);
+    const idx = openIds.indexOf(todo.id);
+    const moves = document.createElement('span');
+    moves.className = 'todo-moves';
+    const up = document.createElement('button');
+    up.type = 'button';
+    up.className = 'todo-move';
+    up.textContent = '▲';
+    up.title = 'Omhoog';
+    up.disabled = idx <= 0;
+    up.addEventListener('click', () => moveTodo(todo.id, -1));
+    const down = document.createElement('button');
+    down.type = 'button';
+    down.className = 'todo-move';
+    down.textContent = '▼';
+    down.title = 'Omlaag';
+    down.disabled = idx < 0 || idx >= openIds.length - 1;
+    down.addEventListener('click', () => moveTodo(todo.id, +1));
+    moves.appendChild(up);
+    moves.appendChild(down);
+    actions.appendChild(moves);
+  }
   actions.appendChild(makeBtn('Bewerk', () => renderTodoEdit(el, todo)));
   actions.appendChild(makeBtn('Verwijder', () => deleteTodo(todo.id)));
   el.appendChild(actions);
@@ -1424,50 +1482,84 @@ function renderTodoEdit(el, todo) {
 /* ---------- Todo state-updates ---------- */
 function addTodo(todo) {
   todos.set(todo.id, todo);
-  const existing = document.querySelector(`.todo[data-id="${todo.id}"]`);
-  if (existing) existing.remove();
-  containerFor(todo).prepend(buildTodoEl(todo));
+  for (const el of allTodoEls(todo.id)) el.remove(); // defensief
+  for (const container of containersFor(todo)) container.prepend(buildTodoEl(todo));
   applyFilter();
 }
 
 function updateTodo(todo) {
   const prev = todos.get(todo.id);
   todos.set(todo.id, todo);
-  const existing = document.querySelector(`.todo[data-id="${todo.id}"]`);
-  if (existing && existing.classList.contains('editing')) return; // niet clobberen
-  if (existing) {
-    // Done-state gewisseld → verplaatsen; anders in-place her-renderen zodat
-    // de positie in de lijst behouden blijft.
-    if (prev && !!prev.done !== !!todo.done) {
-      existing.remove();
-      containerFor(todo).prepend(buildTodoEl(todo));
-    } else {
-      renderTodoView(existing, todo);
-    }
+  const existingEls = allTodoEls(todo.id);
+  if (existingEls.some((el) => el.classList.contains('editing'))) return; // niet clobberen
+
+  if (existingEls.length && prev && !!prev.done !== !!todo.done) {
+    // Done-state gewisseld → uit alle containers halen en opnieuw plaatsen.
+    for (const el of existingEls) el.remove();
+    for (const container of containersFor(todo)) container.prepend(buildTodoEl(todo));
+  } else if (existingEls.length) {
+    // In-place her-renderen op elke plek waar het item al staat, zodat de
+    // positie in de lijst behouden blijft.
+    for (const el of existingEls) renderTodoView(el, todo);
   } else {
-    containerFor(todo).prepend(buildTodoEl(todo));
+    for (const container of containersFor(todo)) container.prepend(buildTodoEl(todo));
   }
   applyFilter();
 }
 
 function removeTodo(id) {
   todos.delete(id);
-  const el = document.querySelector(`.todo[data-id="${id}"]`);
-  if (el) el.remove();
+  for (const el of allTodoEls(id)) el.remove();
   updateEmptyStates();
 }
 
 async function loadTodos() {
   const res = await fetch('/api/todos');
-  const rows = await res.json(); // nieuwste-eerst
+  const rows = await res.json(); // op position
   todos.clear();
   openTodosEl.innerHTML = '';
   doneTodosEl.innerHTML = '';
+  homeTodosListEl.innerHTML = '';
   for (const t of rows) {
     todos.set(t.id, t);
-    containerFor(t).appendChild(buildTodoEl(t));
+    for (const container of containersFor(t)) container.appendChild(buildTodoEl(t));
   }
   applyFilter();
+}
+
+// Verschuif een open to-do één plek en persisteer de nieuwe volgorde.
+// Optimistisch: lokaal meteen herbouwen, dan naar de server (net als
+// moveWithinGroup voor de watchlist).
+async function moveTodo(id, dir) {
+  const openIds = [...todos.values()].filter((t) => !t.done).map((t) => t.id);
+  const i = openIds.indexOf(id);
+  const j = i + dir;
+  if (i < 0 || j < 0 || j >= openIds.length) return;
+  [openIds[i], openIds[j]] = [openIds[j], openIds[i]];
+
+  const doneIds = [...todos.values()].filter((t) => t.done).map((t) => t.id);
+  const byId = new Map(todos);
+  todos.clear();
+  for (const oid of [...openIds, ...doneIds]) todos.set(oid, byId.get(oid));
+
+  openTodosEl.innerHTML = '';
+  homeTodosListEl.innerHTML = '';
+  for (const oid of openIds) {
+    const t = todos.get(oid);
+    openTodosEl.appendChild(buildTodoEl(t));
+    homeTodosListEl.appendChild(buildTodoEl(t));
+  }
+  applyFilter();
+
+  try {
+    await fetch('/api/todos/reorder', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids: [...openIds, ...doneIds] }),
+    });
+  } catch {
+    loadTodos(); // bij een fout terug naar de serverwaarheid
+  }
 }
 
 /* ---------- Quick-add vanuit de to-do view ---------- */
@@ -1531,8 +1623,7 @@ async function saveTodoEdit(id, raw, labelIds) {
     }
     const updated = await res.json();
     todos.set(updated.id, updated);
-    const el = document.querySelector(`.todo[data-id="${updated.id}"]`);
-    if (el) renderTodoView(el, updated);
+    for (const el of allTodoEls(updated.id)) renderTodoView(el, updated);
     applyFilter();
   } catch {
     alert('Bewerken mislukt: geen verbinding.');
@@ -1613,6 +1704,10 @@ function connectSSE() {
   source.addEventListener('todo:edit', (e) => updateTodo(JSON.parse(e.data)));
   source.addEventListener('todo:toggle', (e) => updateTodo(JSON.parse(e.data)));
   source.addEventListener('todo:delete', (e) => removeTodo(JSON.parse(e.data).id));
+  source.addEventListener('todo:reorder', () => {
+    // volgorde elders gewijzigd → serverwaarheid ophalen en opnieuw tekenen
+    loadTodos();
+  });
   source.addEventListener('label:new', (e) => {
     const l = JSON.parse(e.data);
     labels.set(l.id, l);
@@ -1630,6 +1725,8 @@ function connectSSE() {
   source.addEventListener('quotes:update', () => { loadQuotes(); });
   // Rentes ververst de server 1x per dag; dan de KPI-kaarten bijwerken.
   source.addEventListener('rates:update', () => { loadRates(); });
+  // Movers ververst de server elke 30 min.
+  source.addEventListener('movers:update', () => { loadMovers(); });
 
   source.addEventListener('watchlist:new', (e) => {
     const item = JSON.parse(e.data);
@@ -1660,6 +1757,7 @@ loadWatchlist().then(loadQuotes);
 loadStockNews();
 loadFeedNews();
 loadRates();
+loadMovers();
 connectSSE();
 setView('home'); // default: dashboard/home
 
@@ -1668,6 +1766,8 @@ setInterval(loadQuotes, 60 * 1000);
 // Nieuws elke 15 min (matcht server-cache 15 min).
 setInterval(loadStockNews, 15 * 60 * 1000);
 setInterval(loadFeedNews, 15 * 60 * 1000);
+// Movers elke 30 min (matcht server-cache).
+setInterval(loadMovers, 30 * 60 * 1000);
 // Markt-status/"bijgewerkt"-tekst tikt door, ook zonder nieuwe koersdata.
 updateMarketStatus();
 setInterval(updateMarketStatus, 30 * 1000);

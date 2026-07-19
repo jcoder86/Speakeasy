@@ -8,6 +8,7 @@ const multer = require('multer');
 const { db, UPLOADS_DIR } = require('./db');
 const quotes = require('./quotes');
 const rates = require('./rates');
+const movers = require('./movers');
 
 const app = express();
 app.use(express.json());
@@ -255,7 +256,7 @@ function setTodoLabels(todoId, labelIds) {
 
 app.get('/api/todos', (req, res) => {
   // Twee queries, geen N+1: één voor todos, één voor alle todo_labels-joins.
-  const todos = db.prepare('SELECT * FROM todos ORDER BY id DESC').all();
+  const todos = db.prepare('SELECT * FROM todos ORDER BY position ASC, id DESC').all();
   const rows = db
     .prepare(
       `SELECT tl.todo_id, l.id, l.name, l.color
@@ -278,9 +279,12 @@ app.post('/api/todos', (req, res) => {
   if (!text) {
     return res.status(400).json({ error: 'To-do mag niet leeg zijn.' });
   }
+  // Nieuwe to-do boven aan de lijst: positie net onder de laagste bestaande.
+  const minPos = db.prepare('SELECT MIN(position) AS p FROM todos').get().p;
+  const position = Number.isInteger(minPos) ? minPos - 1 : 0;
   const info = db
-    .prepare('INSERT INTO todos (text, created_at) VALUES (?, ?)')
-    .run(text, Date.now());
+    .prepare('INSERT INTO todos (text, position, created_at) VALUES (?, ?, ?)')
+    .run(text, position, Date.now());
   // Optioneel labels meesturen bij aanmaken.
   const id = Number(info.lastInsertRowid);
   if (Array.isArray(req.body.labels) && req.body.labels.length) {
@@ -417,6 +421,30 @@ app.post('/api/watchlist/reorder', (req, res) => {
   res.json({ ok: true });
 });
 
+// Zelfde patroon als watchlist-reorder: client stuurt de volledige gewenste
+// volgorde (open + afgerond), server zet ze om naar position = index.
+app.post('/api/todos/reorder', (req, res) => {
+  const ids = Array.isArray(req.body.ids) ? req.body.ids.map(Number) : null;
+  if (!ids || ids.some((n) => !Number.isInteger(n))) {
+    return res.status(400).json({ error: 'Ongeldige volgorde.' });
+  }
+  const known = new Set(db.prepare('SELECT id FROM todos').all().map((r) => r.id));
+  if (ids.length !== known.size || !ids.every((n) => known.has(n))) {
+    return res.status(409).json({ error: 'Volgorde komt niet overeen met de to-do-lijst.' });
+  }
+  const upd = db.prepare('UPDATE todos SET position = ? WHERE id = ?');
+  db.exec('BEGIN');
+  try {
+    ids.forEach((id, i) => upd.run(i, id));
+    db.exec('COMMIT');
+  } catch (err) {
+    db.exec('ROLLBACK');
+    throw err;
+  }
+  broadcast('todo:reorder', { ids });
+  res.json({ ok: true });
+});
+
 /* ---------- Koersen: zie quotes.js (Twelve Data / EODHD / MOEX) ----------
  * Finnhub is hier vervangen: het gratis plan heeft geen historische candles
  * (waardoor 5d/21d/63d/YTD zich maandenlang moesten opsparen) en is US-only,
@@ -471,10 +499,19 @@ const STOCK_NEWS_MAX = 18;
 // (incl. spaties/leestekens), zodat "S&P500" en "S&P 500!" ook samenvallen.
 const normTitle = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 60);
 
+// Brede index-trackers leveren bij Finnhub geen bedrijfsspecifiek nieuws,
+// maar generiek marktnieuws dat vervolgens ten onrechte als "over DIA/QQQ"
+// getagd werd. Alleen individuele aandelen (incl. sector-ETF's als VGT,
+// die wél relevant bedrijfsnieuws opleveren) blijven meetellen.
+const INDEX_ETF_TICKERS = new Set(['DIA', 'QQQ', 'SPY', 'VOO', 'IVV', 'VTI', 'IWM']);
+
 app.get('/api/news/stocks', async (req, res) => {
   const apiKey = process.env.FINNHUB_API_KEY;
   if (!apiKey) return res.json({ items: [] });
-  const list = db.prepare(`SELECT * FROM watchlist ${WATCHLIST_ORDER}`).all();
+  const list = db
+    .prepare(`SELECT * FROM watchlist ${WATCHLIST_ORDER}`)
+    .all()
+    .filter((w) => !INDEX_ETF_TICKERS.has(w.ticker.toUpperCase()));
 
   // Globaal ontdubbelen op url + genormaliseerde titel; per uniek artikel
   // onthouden bij hoevéél van je aandelen het hoort (= relevantie-signaal).
@@ -569,6 +606,11 @@ app.get('/api/rates', (req, res) => {
   res.json(rates.snapshot());
 });
 
+// Biggest movers buiten je watchlist — zie movers.js (best-effort scraper).
+app.get('/api/movers', (req, res) => {
+  res.json(movers.snapshot());
+});
+
 /* ---------- Start ---------- */
 // Poort: env PORT, anders 1e CLI-argument, anders 3000.
 const PORT = process.env.PORT || process.argv[2] || 3000;
@@ -578,4 +620,6 @@ app.listen(PORT, () => {
   quotes.start(broadcast);
   // Rentes ophalen bij start en daarna 1x per dag; broadcast via SSE.
   rates.start(broadcast);
+  // Movers ophalen bij start en daarna elke 30 min; broadcast via SSE.
+  movers.start(broadcast);
 });

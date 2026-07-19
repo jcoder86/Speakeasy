@@ -501,6 +501,8 @@ main {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.kpi-spark { margin-top: 2px; }
+.kpi-spark svg { display: block; }
 .kpi-placeholder {
   font-size: 0.8rem;
   color: var(--muted);
@@ -549,8 +551,18 @@ main {
    vensters, lange bedrijfsnamen), scrolt hij binnen zijn eigen kaart i.p.v.
    over de buren heen te lopen (was de "grafiek valt onder het nieuws"-bug). */
 #home-stocks-excerpt { overflow-x: auto; }
-.home-quotes-table { font-size: 0.8rem; }
-.home-quotes-table .q-price { padding-left: 12px; }
+/* Deze kolom is nu breder (4fr-aandeel van het grid) dan de "hug content"
+   opmaak van .quotes-table nodig heeft — cijfers kregen zo een kaal gat
+   vóór de sparkline. Ruimere padding verdeelt de breedte over de kolommen
+   i.p.v. hem allemaal aan de grafiek te geven. */
+.home-quotes-table { font-size: 0.85rem; }
+.home-quotes-table th,
+.home-quotes-table td { padding-left: 16px; padding-right: 16px; }
+.home-quotes-table th:first-child,
+.home-quotes-table td:first-child { padding-left: 10px; }
+.home-quotes-table .q-price { padding-left: 20px; }
+.home-quotes-table td.q-spark,
+.home-quotes-table th.q-spark { padding-left: 24px; }
 
 .movers-grid {
   display: grid;
@@ -595,20 +607,10 @@ main {
   color: var(--accent-text);
   border-color: var(--accent);
 }
-.home-todo-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 2px;
-  border-top: 1px solid var(--border);
-}
-.home-todo-row:first-child { border-top: 0; }
-.home-todo-text {
-  font-size: 0.86rem;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
+/* Home-widget hergebruikt nu dezelfde .todo-opmaak als de volledige
+   to-do-pagina (labels, bewerken, schuiven) — geen aparte compacte
+   rij-stijl meer nodig. */
+#home-todos-list { display: flex; flex-direction: column; gap: 4px; }
 
 @media (min-width: 1024px) {
   .home-grid {
@@ -927,6 +929,24 @@ main {
   padding: 0 8px;
   font-size: 0.74rem;
 }
+
+/* Verschuif-knoppen ▲▼ — horizontaal naast elkaar, zelfde hoogte als de
+   overige item-acties in deze rij (i.t.t. de verticale variant bij
+   watchlist, die in een eigen smalle kolom naast de tekst staat). */
+.todo-moves { display: inline-flex; gap: 2px; flex: none; }
+.todo-move {
+  min-height: 36px;
+  min-width: 30px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--muted);
+  border-radius: 6px;
+  font-size: 0.7rem;
+  padding: 0;
+  cursor: pointer;
+}
+.todo-move:hover:not(:disabled) { color: var(--text); border-color: var(--muted); }
+.todo-move:disabled { opacity: 0.3; cursor: default; }
 
 /* Edit-modus: alles verticaal in de kaart */
 .todo.editing {

@@ -71,6 +71,16 @@ db.exec(`
     PRIMARY KEY (ticker, date)
   );
   CREATE INDEX IF NOT EXISTS idx_prices_ticker_date ON prices(ticker, date DESC);
+
+  -- Dagelijkse snapshot van spaar-/hypotheekrente, voor een indicatieve
+  -- trendgrafiek (zie rates.js). Begint leeg; bouwt zich vanaf nu op.
+  CREATE TABLE IF NOT EXISTS rate_history (
+    metric TEXT NOT NULL,
+    date   TEXT NOT NULL,
+    rate   REAL NOT NULL,
+    PRIMARY KEY (metric, date)
+  );
+  CREATE INDEX IF NOT EXISTS idx_rate_history_metric_date ON rate_history(metric, date DESC);
 `);
 
 // --- Additieve migratie: watchlist.position voor handmatige volgorde ---
@@ -81,6 +91,17 @@ if (!wlCols.some((c) => c.name === 'position')) {
   // Bestaande rijen krijgen een positie in hun huidige volgorde (added_at).
   const rows = db.prepare('SELECT id FROM watchlist ORDER BY added_at ASC, id ASC').all();
   const upd = db.prepare('UPDATE watchlist SET position = ? WHERE id = ?');
+  rows.forEach((r, i) => upd.run(i, r.id));
+}
+
+// --- Additieve migratie: todos.position voor handmatige volgorde ---
+const todoCols = db.prepare('PRAGMA table_info(todos)').all();
+if (!todoCols.some((c) => c.name === 'position')) {
+  db.exec('ALTER TABLE todos ADD COLUMN position INTEGER');
+  // Bestaande rijen krijgen een positie die de huidige "nieuwste boven"
+  // volgorde (id DESC) behoudt, zodat de migratie niets omgooit.
+  const rows = db.prepare('SELECT id FROM todos ORDER BY id DESC').all();
+  const upd = db.prepare('UPDATE todos SET position = ? WHERE id = ?');
   rows.forEach((r, i) => upd.run(i, r.id));
 }
 

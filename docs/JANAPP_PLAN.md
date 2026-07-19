@@ -149,13 +149,25 @@ niet te laten wachten tot fase 12. Gebouwd:
   Als de bron ooit zijn HTML-structuur wijzigt, breekt de parser en toont de
   kaart "Niet beschikbaar" i.p.v. te crashen.
 
-## Biggest movers — bleef op watchlist-basis
-Onderzocht of Twelve Data of EODHD (bestaande, al-gebruikte keys) een
-movers/screener-endpoint op de gratis tier hebben. Twelve Data's
-`/market_movers`-endpoint bestaat, maar is expliciet Pro-plan-only (niet
-gratis). EODHD's screener-status op de gratis tier was niet eenduidig te
-bevestigen zonder risico op het kleine dagbudget (20 calls/dag) te verspillen.
-Conclusie: geen gratis "bredere movers"-bron beschikbaar via bestaande keys.
-Biggest movers blijft daarom op de watchlist gebaseerd (fase 7). Een bredere
-movers-universe (fase 10) zou een betaalde upgrade of een aparte scrape-bron
-vereisen — apart af te wegen als de watchlist-basis niet volstaat.
+## Biggest movers — alsnog buiten de watchlist (tweede feedback-ronde)
+Eerste onderzoek: Twelve Data/EODHD (bestaande keys) hebben geen gratis
+movers/screener-endpoint (Twelve Data's `/market_movers` is Pro-plan-only).
+Op verzoek alsnog een scrape-bron gezocht specifiek voor "aandelen die ik niet
+heb": stockanalysis.com/markets/active/ (most-active-by-volume, niet hun
+/gainers//losers-pagina's — die zijn vrijwel volledig micro-/penny-stocks).
+robots.txt staat scrapen toe. **`movers.js`** (nieuwe module): filtert op
+marktkapitalisatie ≥ $5B (herkenbare bedrijven) én sluit je eigen
+watchlist-tickers uit, ververst elke 30 min. Statische HTML bevat maar
+~15-20 rijen (geen paginering zonder JS uit te voeren), dus op een dag met
+overwegend rode of groene koersen kan één kolom (stijgers/dalers) dun of
+leeg uitvallen — inherent aan de bron, geen bug.
+
+## To-do-module — reorder + gedeelde rendering (tweede feedback-ronde)
+`todos.position`-kolom (zelfde migratie-patroon als watchlist.position) +
+`/api/todos/reorder`-endpoint. Frontend: Home-widget hergebruikt nu dezelfde
+`buildTodoEl`/`renderTodoView` als de volledige to-do-pagina (was een aparte,
+minimale rij-implementatie) — labels, bewerken, verwijderen én de nieuwe ▲▼
+schuifknoppen werken nu overal identiek. Een to-do kan als DOM-element op
+twee plekken tegelijk staan (open items: hoofdpagina + Home; afgeronde items:
+alleen hoofdpagina) — alle state-functies (addTodo/updateTodo/removeTodo)
+werken daarom op *alle* instanties (querySelectorAll) i.p.v. op één element.
