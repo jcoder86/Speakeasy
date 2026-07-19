@@ -1046,9 +1046,10 @@ function renderHomeStocksAndMovers() {
     table.appendChild(buildQuotesThead());
     const tbody = document.createElement('tbody');
     for (const item of items) {
-      // Bredere sparkline: deze kolom heeft door de 4fr-breedte van het
-      // Home-grid meer ruimte dan de volledige Aandelen-pagina.
-      tbody.appendChild(buildQuoteRow(item, quotesById.get(item.ticker), 170));
+      // Smallere sparkline dan de volledige Aandelen-pagina (120px): deze
+      // kolom is hooguit 4/9 van de hoofdbreedte, dus juist minder ruimte,
+      // niet meer. 170px veroorzaakte horizontaal scrollen (vorige ronde).
+      tbody.appendChild(buildQuoteRow(item, quotesById.get(item.ticker), 70));
     }
     table.appendChild(tbody);
     homeStocksExcerptEl.appendChild(table);
@@ -1394,17 +1395,6 @@ function renderTodoView(el, todo) {
   el.classList.remove('editing');
   el.classList.toggle('done', !!todo.done);
 
-  // Checkbox in 44x44 label-wrapper als tap-target.
-  const checkWrap = document.createElement('label');
-  checkWrap.className = 'todo-check-wrap';
-  const check = document.createElement('input');
-  check.type = 'checkbox';
-  check.className = 'todo-check';
-  check.checked = !!todo.done;
-  check.addEventListener('change', () => toggleTodo(todo.id, check.checked));
-  checkWrap.appendChild(check);
-  el.appendChild(checkWrap);
-
   const body = document.createElement('div');
   body.className = 'todo-body';
 
@@ -1433,6 +1423,19 @@ function renderTodoView(el, todo) {
 
   const actions = document.createElement('div');
   actions.className = 'item-actions';
+
+  // Afvinken als icoon-knop, samen met de overige acties — een losse
+  // checkbox-kolom links viel niet meer op tussen alle andere knoppen en
+  // kostte breedte die nu naar de tekst gaat.
+  const checkBtn = makeIconBtn(
+    '✓',
+    todo.done ? 'Markeer als niet afgerond' : 'Markeer als afgerond',
+    () => toggleTodo(todo.id, !todo.done),
+  );
+  checkBtn.classList.toggle('todo-check-btn-done', !!todo.done);
+  checkBtn.setAttribute('aria-pressed', String(!!todo.done));
+  actions.appendChild(checkBtn);
+
   if (!todo.done) {
     // Schuiven heeft alleen zin binnen de open lijst — afgeronde items zijn
     // historisch en hoeven niet herordend te worden.
