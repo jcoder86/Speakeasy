@@ -100,7 +100,7 @@ agenda) naast wat er al staat.
 | 9 | **Portfolio (holdings)**: tabel `holdings` (ticker, aantal, aankoopprijs, aankoopdatum), CRUD-UI, P&L tegen actuele koers (hergebruikt quotes.js), Portfolio-pagina + Home-KPI-kaart met 3M-grafiek. | — |
 | 10 | **Marktnieuws (algemeen) + Biggest movers**: Finnhub general-market-news endpoint (bestaande key, geen nieuwe) voor de brede Marktnieuws-tab met Highlights/Alle nieuws + filter; Biggest movers over een apart, curated "movers-universe" (dagelijks ververst). | **Ja** — samenstelling movers-universe met jou afstemmen voor de bouw. |
 | 11 | **Agenda via Google Calendar** — **uitgesteld**, komt later. | Jouw eenmalige Google Cloud-setup nodig voordat ik kan bouwen. |
-| 12 | **Sparrente / Hypotheekrente / Fear & Greed-kaarten**: Fear&Greed via CNN-JSON; Sparrente/Hypotheekrente-scraper met een voorgesteld default (bron + rentevorm) ter goedkeuring. | **Ja** — bron/rentevorm afstemmen voor de bouw. |
+| 12 | ~~Sparrente / Hypotheekrente~~ **vervroegd gebouwd** (zie hieronder) — Fear & Greed staat nog open (CNN-JSON, geen HTML-scrape nodig). | — |
 | 13 *(optioneel, laatste)* | Command-palette (⌘K), invulling "Tools"-pagina (nog te bepalen wat hierin komt). | **Ja** — scope van Tools nog leeg in de screenshot. |
 
 Zelfde discipline als eerder: elke fase los werkend, eigen commit, ik wacht op
@@ -129,3 +129,33 @@ Sidebar (desktop) / bottom-nav + "Meer"-overflow (mobiel):
 Dark mode: CSS-variabelen-set licht/donker, volgt systeeminstelling by default,
 override + onthouden via toggle onderin de sidebar. Markt-status + "data
 bijgewerkt Xm geleden" ernaast, afgeleid van de bestaande `quotes.js`-snapshot.
+
+## Sparrente/Hypotheekrente — vervroegd gebouwd (los van de fasering)
+Na de eerste review van fase 6/7 vroeg je expliciet om deze twee KPI-kaarten
+niet te laten wachten tot fase 12. Gebouwd:
+- **Bron:** actuelerentestanden.nl — één pagina, twee `<table>`s (spaarrente
+  + hypotheekrente), robots.txt staat scrapen van deze pagina's toe, site
+  claimt "dagelijks bijgewerkt".
+- **`rates.js`** (nieuwe module, zelfde patroon als `quotes.js`): regex-based
+  parsing (geen nieuwe dependency — de tabellen hebben stabiele class-namen
+  en bruikbare `data-order`-attributen), dagelijkse refresh, vorige waarde +
+  foutmelding blijven staan bij een parse-fout (site kan zijn HTML wijzigen).
+- **Sparrente:** hoogste vrij-opneembare rente uit de tabel (op moment van
+  bouwen: Revolut 3,10%) — dus de beste vrij opneembare rente die
+  actuelerentestanden.nl kent, niet per se "de grote 3" NL-banken.
+- **Hypotheekrente:** 10 jaar vast met NHG (gangbare referentie), incl.
+  aanbieder.
+- **Fragieler dan de koersen-API's** — expliciet gedocumenteerd in `rates.js`.
+  Als de bron ooit zijn HTML-structuur wijzigt, breekt de parser en toont de
+  kaart "Niet beschikbaar" i.p.v. te crashen.
+
+## Biggest movers — bleef op watchlist-basis
+Onderzocht of Twelve Data of EODHD (bestaande, al-gebruikte keys) een
+movers/screener-endpoint op de gratis tier hebben. Twelve Data's
+`/market_movers`-endpoint bestaat, maar is expliciet Pro-plan-only (niet
+gratis). EODHD's screener-status op de gratis tier was niet eenduidig te
+bevestigen zonder risico op het kleine dagbudget (20 calls/dag) te verspillen.
+Conclusie: geen gratis "bredere movers"-bron beschikbaar via bestaande keys.
+Biggest movers blijft daarom op de watchlist gebaseerd (fase 7). Een bredere
+movers-universe (fase 10) zou een betaalde upgrade of een aparte scrape-bron
+vereisen — apart af te wegen als de watchlist-basis niet volstaat.

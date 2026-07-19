@@ -9,7 +9,7 @@
   --accent: #2563eb;
   --accent-text: #ffffff;
   --nav-h: 60px;
-  --sidebar-w: 200px;
+  --sidebar-w: 160px;
   color-scheme: light;
 }
 
@@ -494,6 +494,13 @@ main {
   color: var(--muted);
 }
 .kpi-value { font-size: 1.3rem; font-weight: 700; }
+.kpi-sub {
+  font-size: 0.72rem;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .kpi-placeholder {
   font-size: 0.8rem;
   color: var(--muted);
@@ -538,6 +545,10 @@ main {
 }
 .widget-head .news-heading { margin-bottom: 0; }
 
+/* Veiligheidsnet: als de tabel toch breder wil zijn dan de kolom (smalle
+   vensters, lange bedrijfsnamen), scrolt hij binnen zijn eigen kaart i.p.v.
+   over de buren heen te lopen (was de "grafiek valt onder het nieuws"-bug). */
+#home-stocks-excerpt { overflow-x: auto; }
 .home-quotes-table { font-size: 0.8rem; }
 .home-quotes-table .q-price { padding-left: 12px; }
 
@@ -602,7 +613,9 @@ main {
 @media (min-width: 1024px) {
   .home-grid {
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
+    /* Aandelen breder (koerstabel heeft 8 kolommen + sparkline nodig),
+       to-do's smaller (korte tekstregels lieten veel lege ruimte over). */
+    grid-template-columns: 4fr 3fr 2fr;
     align-items: start;
   }
 }

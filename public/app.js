@@ -38,6 +38,10 @@ const marketStatusDot = document.getElementById('market-status-dot');
 const marketStatusText = document.getElementById('market-status-text');
 const quotesUpdatedText = document.getElementById('quotes-updated-text');
 const kpiTodosValueEl = document.getElementById('kpi-todos-value');
+const kpiSavingsValueEl = document.getElementById('kpi-savings-value');
+const kpiSavingsSubEl = document.getElementById('kpi-savings-sub');
+const kpiMortgageValueEl = document.getElementById('kpi-mortgage-value');
+const kpiMortgageSubEl = document.getElementById('kpi-mortgage-sub');
 const homeStocksExcerptEl = document.getElementById('home-stocks-excerpt');
 const homeMoversEl = document.getElementById('home-movers');
 const homeNewsStocksEl = document.getElementById('home-news-stocks');
@@ -1129,6 +1133,32 @@ function renderHomeTodos() {
   }
 }
 
+// Sparrente/hypotheekrente-KPI's (best-effort scraper, zie rates.js op de
+// server — ververst 1x per dag, dus geen aparte poll-interval nodig hier).
+async function loadRates() {
+  try {
+    const res = await fetch('/api/rates');
+    const data = await res.json();
+    if (data.savings) {
+      kpiSavingsValueEl.textContent = data.savings.rate.toLocaleString('nl-NL', { minimumFractionDigits: 2 }) + '%';
+      kpiSavingsSubEl.textContent = data.savings.name;
+    } else {
+      kpiSavingsValueEl.textContent = '–';
+      kpiSavingsSubEl.textContent = data.error ? 'Niet beschikbaar' : 'Laden…';
+    }
+    if (data.mortgage) {
+      kpiMortgageValueEl.textContent = data.mortgage.rate.toLocaleString('nl-NL', { minimumFractionDigits: 2 }) + '%';
+      kpiMortgageSubEl.textContent = `${data.mortgage.years}j vast NHG · ${data.mortgage.bank}`;
+    } else {
+      kpiMortgageValueEl.textContent = '–';
+      kpiMortgageSubEl.textContent = data.error ? 'Niet beschikbaar' : 'Laden…';
+    }
+  } catch {
+    kpiSavingsSubEl.textContent = 'Niet beschikbaar';
+    kpiMortgageSubEl.textContent = 'Niet beschikbaar';
+  }
+}
+
 homeTodoAddForm.addEventListener('submit', async (e) => {
   e.preventDefault();
   const text = homeTodoAddInput.value.trim();
@@ -1598,6 +1628,8 @@ function connectSSE() {
   });
   // Server ververst koersen op een timer; dan meteen de strip bijwerken.
   source.addEventListener('quotes:update', () => { loadQuotes(); });
+  // Rentes ververst de server 1x per dag; dan de KPI-kaarten bijwerken.
+  source.addEventListener('rates:update', () => { loadRates(); });
 
   source.addEventListener('watchlist:new', (e) => {
     const item = JSON.parse(e.data);
@@ -1627,6 +1659,7 @@ loadTodos();
 loadWatchlist().then(loadQuotes);
 loadStockNews();
 loadFeedNews();
+loadRates();
 connectSSE();
 setView('home'); // default: dashboard/home
 

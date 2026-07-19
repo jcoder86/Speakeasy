@@ -7,6 +7,7 @@ const express = require('express');
 const multer = require('multer');
 const { db, UPLOADS_DIR } = require('./db');
 const quotes = require('./quotes');
+const rates = require('./rates');
 
 const app = express();
 app.use(express.json());
@@ -563,6 +564,11 @@ app.post('/api/quotes/refresh', async (req, res) => {
   res.json(quotes.snapshot());
 });
 
+// Spaar-/hypotheekrente — zie rates.js (best-effort scraper, ververst 1x/dag).
+app.get('/api/rates', (req, res) => {
+  res.json(rates.snapshot());
+});
+
 /* ---------- Start ---------- */
 // Poort: env PORT, anders 1e CLI-argument, anders 3000.
 const PORT = process.env.PORT || process.argv[2] || 3000;
@@ -570,4 +576,6 @@ app.listen(PORT, () => {
   console.log(`Speakeasy draait op http://localhost:${PORT}`);
   // Koersen ophalen bij start en daarna elke 15 min; broadcast via SSE.
   quotes.start(broadcast);
+  // Rentes ophalen bij start en daarna 1x per dag; broadcast via SSE.
+  rates.start(broadcast);
 });
