@@ -497,6 +497,78 @@ function sparklineSvg(closes) {
   return svg;
 }
 
+// Kop van de koerstabel — gedeeld tussen de volledige Aandelen-tabel en het
+// (ongecapte) Home-excerpt, zodat beide exact dezelfde kolommen tonen.
+function buildQuotesThead() {
+  const thead = document.createElement('thead');
+  const hr = document.createElement('tr');
+  // Handelsdagen, maar leesbare koppen: 5 handelsdagen ≈ 1 week, 21 ≈ 1 maand,
+  // 63 ≈ 3 maanden. Zonder weekend-vertekening, wél begrijpelijk.
+  for (const [label, cls] of [
+    ['Naam', ''], ['Koers', ''], ['1d', ''], ['1w', ''],
+    ['1m', 'q-hide-sm'], ['3m', 'q-hide-sm'], ['YTD', 'q-hide-sm'],
+    ['3 mnd', 'q-hide-sm q-spark'], // periode van de sparkline
+  ]) {
+    const th = document.createElement('th');
+    th.textContent = label;
+    if (cls) th.className = cls;
+    hr.appendChild(th);
+  }
+  thead.appendChild(hr);
+  return thead;
+}
+
+// Eén rij van de koerstabel — alle kolommen (koers, 1d/1w/1m/3m/YTD,
+// sparkline). Gedeeld tussen de volledige Aandelen-tabel en het Home-excerpt.
+function buildQuoteRow(item, q) {
+  const row = document.createElement('tr');
+  row.dataset.ticker = item.ticker;
+
+  const nameTd = document.createElement('td');
+  const wrap = document.createElement('div');
+  wrap.className = 'q-name';
+  const sym = document.createElement('span');
+  sym.className = 'q-sym';
+  sym.textContent = item.ticker;
+  wrap.appendChild(sym);
+  const co = document.createElement('span');
+  co.className = 'q-co';
+  co.textContent = item.display_name || '';
+  wrap.appendChild(co);
+  nameTd.appendChild(wrap);
+  row.appendChild(nameTd);
+
+  if (q && q.error && q.price === null) {
+    // geen enkele koers bekend: toon de reden, verder niets verzinnen
+    const td = document.createElement('td');
+    td.colSpan = 7;
+    td.className = 'q-err';
+    td.textContent = q.error;
+    row.appendChild(td);
+  } else if (q && q.price !== null && q.price !== undefined) {
+    const p = cell(row, priceStr(q.price, q.currency), 'q-price');
+    // laatst bekende koers bij een storing: markeren i.p.v. stilzwijgend tonen
+    if (q.error) p.title = `Laatst bekend — ${q.error}`;
+    deltaCell(row, q.deltas.d1, 'q-d1');
+    deltaCell(row, q.deltas.d5);
+    deltaCell(row, q.deltas.d21, 'q-hide-sm');
+    deltaCell(row, q.deltas.d63, 'q-hide-sm');
+    deltaCell(row, q.deltas.ytd, 'q-hide-sm');
+    // sparkline (30 handelsdagen), kleur volgt de 1m-trend
+    const sp = document.createElement('td');
+    sp.className = 'q-hide-sm q-spark';
+    sp.appendChild(sparklineSvg(q.spark));
+    row.appendChild(sp);
+  } else {
+    const td = document.createElement('td');
+    td.colSpan = 7;
+    td.className = 'q-load';
+    td.textContent = 'laden…';
+    row.appendChild(td);
+  }
+  return row;
+}
+
 function renderQuotesStrip() {
   // Home-excerpt (aandelen + movers) leest dezelfde watchlist/quotesCache,
   // dus hier centraal aanroepen dekt alle call-sites in één keer.
@@ -514,23 +586,7 @@ function renderQuotesStrip() {
 
   const table = document.createElement('table');
   table.className = 'quotes-table';
-
-  const thead = document.createElement('thead');
-  const hr = document.createElement('tr');
-  // Handelsdagen, maar leesbare koppen: 5 handelsdagen ≈ 1 week, 21 ≈ 1 maand,
-  // 63 ≈ 3 maanden. Zonder weekend-vertekening, wél begrijpelijk.
-  for (const [label, cls] of [
-    ['Naam', ''], ['Koers', ''], ['1d', ''], ['1w', ''],
-    ['1m', 'q-hide-sm'], ['3m', 'q-hide-sm'], ['YTD', 'q-hide-sm'],
-    ['3 mnd', 'q-hide-sm q-spark'], // periode van de sparkline
-  ]) {
-    const th = document.createElement('th');
-    th.textContent = label;
-    if (cls) th.className = cls;
-    hr.appendChild(th);
-  }
-  thead.appendChild(hr);
-  table.appendChild(thead);
+  table.appendChild(buildQuotesThead());
 
   const tbody = document.createElement('tbody');
 
@@ -567,56 +623,7 @@ function renderQuotesStrip() {
       tbody.appendChild(gr);
       continue;
     }
-    const item = entry.item;
-    const q = quotesById.get(item.ticker);
-    const row = document.createElement('tr');
-    row.dataset.ticker = item.ticker;
-
-    // naam
-    const nameTd = document.createElement('td');
-    const wrap = document.createElement('div');
-    wrap.className = 'q-name';
-    const sym = document.createElement('span');
-    sym.className = 'q-sym';
-    sym.textContent = item.ticker;
-    wrap.appendChild(sym);
-    const co = document.createElement('span');
-    co.className = 'q-co';
-    co.textContent = item.display_name || '';
-    wrap.appendChild(co);
-    nameTd.appendChild(wrap);
-    row.appendChild(nameTd);
-
-    if (q && q.error && q.price === null) {
-      // geen enkele koers bekend: toon de reden, verder niets verzinnen
-      const td = document.createElement('td');
-      td.colSpan = 7;
-      td.className = 'q-err';
-      td.textContent = q.error;
-      row.appendChild(td);
-    } else if (q && q.price !== null && q.price !== undefined) {
-      const p = cell(row, priceStr(q.price, q.currency), 'q-price');
-      // laatst bekende koers bij een storing: markeren i.p.v. stilzwijgend tonen
-      if (q.error) p.title = `Laatst bekend — ${q.error}`;
-      deltaCell(row, q.deltas.d1, 'q-d1');
-      deltaCell(row, q.deltas.d5);
-      deltaCell(row, q.deltas.d21, 'q-hide-sm');
-      deltaCell(row, q.deltas.d63, 'q-hide-sm');
-      deltaCell(row, q.deltas.ytd, 'q-hide-sm');
-      // sparkline (30 handelsdagen), kleur volgt de 1m-trend
-      const sp = document.createElement('td');
-      sp.className = 'q-hide-sm q-spark';
-      sp.appendChild(sparklineSvg(q.spark));
-      row.appendChild(sp);
-    } else {
-      const td = document.createElement('td');
-      td.colSpan = 7;
-      td.className = 'q-load';
-      td.textContent = 'laden…';
-      row.appendChild(td);
-    }
-
-    tbody.appendChild(row);
+    tbody.appendChild(buildQuoteRow(entry.item, quotesById.get(entry.item.ticker)));
   }
 
   table.appendChild(tbody);
@@ -993,10 +1000,10 @@ async function loadFeedNews() {
 /* ===================================================================
    HOME-DASHBOARD (excerpts van bovenstaande + to-do's)
    =================================================================== */
-const HOME_STOCK_ROWS = 6;
+// Alleen nieuws wordt afgekapt (headlines + "Meer nieuws"-link) — aandelen
+// en to-do's tonen hun volledige lijst, die is doorgaans kort genoeg.
 const HOME_MOVERS_COUNT = 3;
 const HOME_NEWS_COUNT = 3;
-const HOME_TODO_ROWS = 5;
 
 // Compacte rij: ticker + naam + koers + 1d-delta. Geen groepskopjes/sparkline
 // — dat is precies waarom dit een "excerpt" is, de volledige tabel staat op
@@ -1006,6 +1013,8 @@ function renderHomeStocksAndMovers() {
   const quotesById = new Map(quotesCache.quotes.map((q) => [q.ticker, q]));
   const items = [...watchlist.values()];
 
+  // Volledige tabel, alle kolommen — net als de Aandelen-pagina, alleen
+  // zonder beursgroepering. Niet capped: de hele watchlist past hier prima.
   homeStocksExcerptEl.innerHTML = '';
   if (items.length === 0) {
     const p = document.createElement('p');
@@ -1015,30 +1024,10 @@ function renderHomeStocksAndMovers() {
   } else {
     const table = document.createElement('table');
     table.className = 'quotes-table home-quotes-table';
+    table.appendChild(buildQuotesThead());
     const tbody = document.createElement('tbody');
-    for (const item of items.slice(0, HOME_STOCK_ROWS)) {
-      const q = quotesById.get(item.ticker);
-      const row = document.createElement('tr');
-      const nameTd = document.createElement('td');
-      const wrap = document.createElement('div');
-      wrap.className = 'q-name';
-      const sym = document.createElement('span');
-      sym.className = 'q-sym';
-      sym.textContent = item.ticker;
-      wrap.appendChild(sym);
-      nameTd.appendChild(wrap);
-      row.appendChild(nameTd);
-      if (q && q.price !== null && q.price !== undefined) {
-        cell(row, priceStr(q.price, q.currency), 'q-price');
-        deltaCell(row, q.deltas.d1, 'q-d1');
-      } else {
-        const td = document.createElement('td');
-        td.colSpan = 2;
-        td.className = 'q-load';
-        td.textContent = q && q.error ? '—' : 'laden…';
-        row.appendChild(td);
-      }
-      tbody.appendChild(row);
+    for (const item of items) {
+      tbody.appendChild(buildQuoteRow(item, quotesById.get(item.ticker)));
     }
     table.appendChild(tbody);
     homeStocksExcerptEl.appendChild(table);
@@ -1124,7 +1113,7 @@ function renderHomeTodos() {
 
   homeTodosListEl.innerHTML = '';
   homeTodosEmptyEl.hidden = open.length > 0;
-  for (const todo of open.slice(0, HOME_TODO_ROWS)) {
+  for (const todo of open) {
     const row = document.createElement('div');
     row.className = 'home-todo-row';
     const check = document.createElement('input');

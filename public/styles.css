@@ -9,7 +9,7 @@
   --accent: #2563eb;
   --accent-text: #ffffff;
   --nav-h: 60px;
-  --sidebar-w: 232px;
+  --sidebar-w: 200px;
   color-scheme: light;
 }
 
@@ -1060,7 +1060,7 @@ button:active { transform: translateY(1px); }
     height: 100%;
     background: var(--surface);
     border-right: 1px solid var(--border);
-    padding: 16px 12px;
+    padding: 12px 10px;
     gap: 4px;
   }
 
@@ -1068,36 +1068,41 @@ button:active { transform: translateY(1px); }
     display: flex;
     align-items: center;
     gap: 8px;
-    padding: 4px 8px 16px;
+    padding: 4px 8px 10px;
   }
   .brand-mark {
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 28px;
-    height: 28px;
-    border-radius: 8px;
+    width: 26px;
+    height: 26px;
+    border-radius: 7px;
     background: var(--accent);
     color: var(--accent-text);
     font-weight: 700;
-    font-size: 0.95rem;
+    font-size: 0.9rem;
   }
-  .brand-name { font-weight: 700; font-size: 1.15rem; }
+  .brand-name { font-weight: 700; font-size: 1.1rem; }
 
+  /* flex:1 1 auto vult de ruimte tussen brand en footer (nodig zodat de
+     footer onderaan blijft plakken); de knoppen zelf mogen NIET meegroeien
+     (flex:0 0 auto hieronder) — anders rekt elke knop uit tot een gelijk
+     deel van die hele hoogte, met precies de te grote tussenruimte tot gevolg. */
   #sidebar-nav {
     display: flex;
     flex-direction: column;
-    gap: 2px;
+    gap: 1px;
     flex: 1 1 auto;
     overflow-y: auto;
   }
   #sidebar-nav .nav-btn {
+    flex: 0 0 auto;
     justify-content: flex-start;
     text-align: left;
-    min-height: 40px;
+    min-height: 34px;
     padding: 0 10px;
-    border-radius: 8px;
-    font-size: 0.88rem;
+    border-radius: 7px;
+    font-size: 0.84rem;
   }
   #sidebar-nav .nav-btn.active {
     background: color-mix(in srgb, var(--accent) 14%, transparent);
