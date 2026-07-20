@@ -51,9 +51,15 @@ let running = false;
 /* Extra's buiten de watchlist voor de Home-KPI's (Oil & Gas, Crypto) — geen
    aandelen, dus niet in "Mijn aandelen" of de watchlist-beheerpagina, maar wel
    via dezelfde Twelve Data-infrastructuur (credit-poort, dagcandles, deltas,
-   sparkline). Alleen WTI is beschikbaar op dit plan (geen los gas-symbool). */
+   sparkline).
+
+   Olie via BNO en niet via WTI/USD of XBR/USD: grondstofsymbolen zitten niet
+   in het gratis Twelve Data-plan ("available starting with the Grow plan"),
+   waardoor die kaart leeg bleef. BNO is een fonds dat Brent-futures volgt —
+   Brent is de wereldwijde olie-benchmark, dus de beweging is representatief.
+   Let op: de koers is de fondsprijs, niet de prijs per vat zelf. */
 const EXTRAS = [
-  { key: 'oil', symbol: 'WTI/USD' },
+  { key: 'oil', symbol: 'BNO' },
   { key: 'crypto', symbol: 'BTC/USD' },
 ];
 const EXTRAS_SNAPSHOT = new Map();

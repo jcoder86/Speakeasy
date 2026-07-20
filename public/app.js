@@ -617,10 +617,24 @@ function updatePortfolioPlaceholder() {
   kpiPortfolioValueEl.className = 'kpi-value ' + trendClass(avg);
 }
 
-// Oil & Gas (WTI-olie) en Crypto (Bitcoin) — komen niet uit de watchlist maar
-// als losse "extra's" uit dezelfde Twelve Data-infrastructuur (zie quotes.js),
-// met échte dagcandles, dus meteen een volwaardige sparkline i.p.v. de
-// aanname-fallback die de rentes gebruiken (die accumuleren maar 1x/dag).
+/* Elke trendlijn krijgt een klein periode-label ernaast: zonder dat is niet
+   te zien of je naar een week of naar twee jaar kijkt, en dat verandert de
+   betekenis van de lijn volledig. */
+function appendSparkPeriod(sparkEl, period) {
+  if (!sparkEl || !period) return;
+  const tag = document.createElement('span');
+  tag.className = 'kpi-period';
+  tag.textContent = period;
+  sparkEl.appendChild(tag);
+}
+
+// Oil & Gas (Brent via BNO) en Crypto (Bitcoin) — komen niet uit de watchlist
+// maar als losse "extra's" uit dezelfde Twelve Data-infrastructuur (zie
+// quotes.js), met échte dagcandles, dus meteen een volwaardige sparkline
+// i.p.v. de aanname-fallback die de hypotheekrente gebruikt.
+// Periode = sparkFrom() in quotes.js: 63 beursdagen ≈ 3 maanden.
+const EXTRA_SPARK_PERIOD = '3 mnd';
+
 function renderExtraKpi(valueEl, subEl, sparkEl, q, label) {
   if (!valueEl) return;
   if (!q || q.price === null || q.price === undefined) {
@@ -636,13 +650,16 @@ function renderExtraKpi(valueEl, subEl, sparkEl, q, label) {
   if (subEl) subEl.textContent = `${label} · ${pct(d1)}`;
   if (sparkEl) {
     sparkEl.innerHTML = '';
-    if (Array.isArray(q.spark) && q.spark.length >= 3) sparkEl.appendChild(sparklineSvg(q.spark));
+    if (Array.isArray(q.spark) && q.spark.length >= 3) {
+      sparkEl.appendChild(sparklineSvg(q.spark));
+      appendSparkPeriod(sparkEl, EXTRA_SPARK_PERIOD);
+    }
   }
 }
 
 function renderExtras() {
   const extras = quotesCache.extras || {};
-  renderExtraKpi(kpiOilValueEl, kpiOilSubEl, kpiOilSparkEl, extras.oil, 'WTI Crude');
+  renderExtraKpi(kpiOilValueEl, kpiOilSubEl, kpiOilSparkEl, extras.oil, 'Brent-olie');
   renderExtraKpi(kpiCryptoValueEl, kpiCryptoSubEl, kpiCryptoSparkEl, extras.crypto, 'Bitcoin');
 }
 
@@ -1276,11 +1293,14 @@ function buildRateArrow(cls, symbol, title) {
   return arrow;
 }
 
-function renderRateSpark(el, spark) {
+function renderRateSpark(el, spark, period) {
   el.innerHTML = '';
   if (!Array.isArray(spark) || spark.length === 0) return;
   if (spark.length >= 3) {
     el.appendChild(sparklineSvg(spark));
+    // Alleen bij een échte lijn: bij de pijltjes-fallback hieronder is er
+    // nog geen periode om over te praten.
+    appendSparkPeriod(el, period);
     return;
   }
   if (spark.length === 2) {
@@ -1324,7 +1344,7 @@ function renderEcbCard(ecb, error) {
   }
 
   kpiEcbValueEl.textContent = ecb.rate.toLocaleString('nl-NL', { minimumFractionDigits: 2 }) + '%';
-  renderRateSpark(kpiEcbSparkEl, ecb.spark);
+  renderRateSpark(kpiEcbSparkEl, ecb.spark, ecb.spark_period);
 
   /* De sparkline toont de lange lijn (2 jaar), maar die kan dalen terwijl de
      laatste stap juist een verhoging was — daarom de laatste wijziging apart
@@ -1367,7 +1387,7 @@ async function loadRates() {
     if (data.mortgage) {
       kpiMortgageValueEl.textContent = data.mortgage.rate.toLocaleString('nl-NL', { minimumFractionDigits: 2 }) + '%';
       kpiMortgageSubEl.textContent = `${data.mortgage.years}j vast NHG · ${data.mortgage.bank}`;
-      renderRateSpark(kpiMortgageSparkEl, data.mortgage.spark);
+      renderRateSpark(kpiMortgageSparkEl, data.mortgage.spark, data.mortgage.spark_period);
     } else {
       kpiMortgageValueEl.textContent = '–';
       kpiMortgageSubEl.textContent = data.mortgage_error ? 'Niet beschikbaar' : 'Laden…';

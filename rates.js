@@ -218,12 +218,33 @@ async function refresh(broadcast) {
   if (broadcast) broadcast('rates:update', { generated_at: now });
 }
 
+// Dagpunten omzetten naar een kort, eerlijk periode-label voor onder de
+// trendlijn. De hypotheekhistorie groeit dagelijks aan, dus die periode is
+// niet vast — hem hardcoden zou een langere reeks suggereren dan er is.
+function periodLabel(days) {
+  if (!days || days < 2) return null;
+  if (days >= 365) {
+    const years = Math.round(days / 365);
+    return years === 1 ? '1 jaar' : `${years} jaar`;
+  }
+  if (days >= 60) return `${Math.round(days / 30)} mnd`;
+  return `${days} dgn`;
+}
+
 function snapshot() {
+  const mortgageSpark = cache.mortgage ? historySpark('mortgage_abn_10y') : [];
   return {
     // De ECB-spark komt uit de API zelf, niet uit rate_history.
-    ecb: cache.ecb ? { ...cache.ecb, ok_at: cache.ecbOkAt || null } : null,
+    ecb: cache.ecb
+      ? { ...cache.ecb, spark_period: periodLabel(ECB_HISTORY_DAYS), ok_at: cache.ecbOkAt || null }
+      : null,
     mortgage: cache.mortgage
-      ? { ...cache.mortgage, spark: historySpark('mortgage_abn_10y'), ok_at: cache.mortgageOkAt || null }
+      ? {
+        ...cache.mortgage,
+        spark: mortgageSpark,
+        spark_period: periodLabel(mortgageSpark.length),
+        ok_at: cache.mortgageOkAt || null,
+      }
       : null,
     ecb_error: cache.ecbError,
     mortgage_error: cache.mortgageError,

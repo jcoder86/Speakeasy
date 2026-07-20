@@ -76,13 +76,18 @@ body {
 /* =====================================================================
    Navigatie — gedeeld tussen sidebar, bottom-nav en het "Meer"-overzicht
    ===================================================================== */
+/* Mobiel staat de navigatie bovenáán (order:-1 binnen de .app-main-kolom,
+   waar hij in de DOM ná <main> komt). Zo is het menu direct zichtbaar
+   zonder te scrollen, en zit het niet in de weg van de duim-zone bij het
+   typen van een to-do. Op desktop wordt hij verborgen (zie 1024px-query). */
 #mobile-nav {
   flex: 0 0 auto;
+  order: -1;
   display: flex;
   gap: 0;
   background: var(--surface);
-  border-top: 1px solid var(--border);
-  padding-bottom: env(safe-area-inset-bottom);
+  border-bottom: 1px solid var(--border);
+  padding-top: env(safe-area-inset-top);
   z-index: 10;
 }
 
@@ -525,6 +530,16 @@ main {
 }
 .kpi-value-row .kpi-spark { margin-top: 0; }
 .kpi-spark svg { display: block; }
+/* Periode van de trendlijn, klein onder de lijn: een grafiek zonder tijdvak
+   is niet te interpreteren (week of twee jaar scheelt nogal). */
+.kpi-period {
+  display: block;
+  font-size: 0.58rem;
+  line-height: 1;
+  color: var(--muted);
+  text-align: right;
+  margin-top: 1px;
+}
 .rate-trend-arrow { font-size: 1rem; font-weight: 700; }
 .kpi-placeholder {
   font-size: 0.8rem;
@@ -605,6 +620,12 @@ main {
   grid-template-columns: 1fr 1fr;
   gap: 10px;
 }
+/* Twee kolommen stijgers/dalers naast elkaar passen niet op een telefoon:
+   dat duwde de hele Home-view ~46px breder dan het scherm, waardoor de
+   pagina horizontaal meescrolde. Onder elkaar dus. */
+@media (max-width: 700px) {
+  .movers-grid { grid-template-columns: 1fr; gap: 12px; }
+}
 .movers-col-title {
   font-size: 0.68rem;
   font-weight: 700;
@@ -656,6 +677,32 @@ main {
     grid-template-columns: 4fr 3fr 2fr;
     align-items: start;
   }
+}
+
+/* =====================================================================
+   Mobiel (<1024px): to-do's bovenaan, want dat is waarvoor de app hier
+   het vaakst geopend wordt (snel een taak toevoegen). Dat moet zonder
+   scrollen kunnen, dus de to-do-kolom gaat vóór de KPI-rij staan.
+
+   display:contents haalt .home-grid als layout-box weg, waardoor de drie
+   kolommen directe flex-items van #home-view worden. Pas dan staan ze in
+   dezelfde volgorde-context als .kpi-row en kan order ze door elkaar
+   heen sorteren — zonder de DOM te herschikken (die moet op desktop
+   juist ongemoeid blijven).
+   ===================================================================== */
+@media (max-width: 1023px) {
+  #home-view { display: flex; flex-direction: column; }
+  #home-view.view-active { display: flex; }
+  .home-grid { display: contents; }
+
+  .home-col-todo { order: 1; }
+  .kpi-row { order: 2; }
+  .home-col-stocks { order: 3; }
+  .home-col-news { order: 4; }
+
+  /* Zonder deze gap vielen de kolommen tegen elkaar aan zodra .home-grid
+     zijn eigen gap verloor door display:contents. */
+  #home-view { gap: 16px; }
 }
 
 /* Chat wijkt af van de standaard .view: geen eigen scroll/padding, want
