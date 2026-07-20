@@ -691,18 +691,210 @@ main {
    juist ongemoeid blijven).
    ===================================================================== */
 @media (max-width: 1023px) {
-  #home-view { display: flex; flex-direction: column; }
-  #home-view.view-active { display: flex; }
+  /* LET OP: dit moet op .view-active staan. Een kale #home-view-regel wint
+     qua specificiteit (id) van de display:none in .view, waardoor Home ook
+     zichtbaar bleef wanneer een ándere pagina actief was — die stapelde dan
+     onder de Home-inhoud. De gap compenseert de gap die .home-grid verliest
+     door display:contents. */
+  #home-view.view-active {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
   .home-grid { display: contents; }
 
   .home-col-todo { order: 1; }
   .kpi-row { order: 2; }
   .home-col-stocks { order: 3; }
   .home-col-news { order: 4; }
+}
 
-  /* Zonder deze gap vielen de kolommen tegen elkaar aan zodra .home-grid
-     zijn eigen gap verloor door display:contents. */
-  #home-view { gap: 16px; }
+/* =====================================================================
+   Marktrisico-paneel (data uit de Speakeasy-risk pipeline)
+   ===================================================================== */
+.risk-mount:empty { display: none; }
+
+.risk-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.risk-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.risk-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+/* Regime-kleuren. Bewust niet de groen/rood-semantiek van koersen: dit is
+   een toestand, geen richting. Tinten werken in beide thema's. */
+.risk-badge {
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding: 3px 8px;
+  border-radius: 999px;
+  white-space: nowrap;
+  cursor: help;
+}
+.regime-calm { background: color-mix(in srgb, #16a34a 20%, var(--surface)); color: #15803d; }
+.regime-fragile { background: color-mix(in srgb, #f59e0b 22%, var(--surface)); color: #b45309; }
+.regime-shock { background: color-mix(in srgb, #f97316 22%, var(--surface)); color: #c2410c; }
+.regime-storm { background: color-mix(in srgb, #dc2626 20%, var(--surface)); color: #dc2626; }
+:root[data-theme="dark"] .regime-calm { color: #22c55e; }
+:root[data-theme="dark"] .regime-fragile { color: #f59e0b; }
+:root[data-theme="dark"] .regime-shock { color: #fb923c; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .regime-calm { color: #22c55e; }
+  :root:not([data-theme="light"]) .regime-fragile { color: #f59e0b; }
+  :root:not([data-theme="light"]) .regime-shock { color: #fb923c; }
+}
+
+.risk-toggle {
+  flex: 0 0 auto;
+  min-width: 28px;
+  min-height: 28px;
+  padding: 0;
+  font-size: 0.8rem;
+  color: var(--muted);
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+.risk-since {
+  font-size: 0.72rem;
+  color: var(--muted);
+  margin-top: -6px;
+}
+
+.risk-body { display: flex; flex-direction: column; gap: 10px; }
+.risk-card.collapsed .risk-body,
+.risk-card.collapsed .risk-since { display: none; }
+
+/* Meters: label, balk en getal op een vast raster, zodat alle balken
+   onder elkaar netjes uitlijnen. */
+.risk-meter,
+.risk-pillar {
+  display: grid;
+  align-items: center;
+}
+.risk-meter { grid-template-columns: 74px 1fr 26px; gap: 8px; }
+.risk-pillar { grid-template-columns: 106px 1fr 22px 30px; gap: 6px; }
+
+.risk-meter-label { font-size: 0.78rem; font-weight: 600; }
+.risk-meter-value { font-size: 0.82rem; font-weight: 700; text-align: right; }
+.risk-pillar-label {
+  font-size: 0.72rem;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.risk-pillar-value { font-size: 0.72rem; text-align: right; }
+.risk-pillar-delta { font-size: 0.66rem; text-align: right; cursor: help; }
+
+.risk-meter-track {
+  height: 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--muted) 22%, var(--surface));
+  overflow: hidden;
+}
+.risk-meter-track-sm { height: 5px; }
+.risk-meter-fill { height: 100%; border-radius: 999px; }
+/* Fragiliteit = traag/structureel (indigo), stress = acuut (oranje).
+   Bewust niet groen/rood: een hoge score is een toestand, geen verlies. */
+.risk-axis-fragility { background: #6366f1; }
+.risk-axis-stress { background: #f97316; }
+
+.risk-pillars {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+
+.risk-section-title {
+  font-size: 0.66rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+
+/* Historische strip */
+.risk-chart-wrap { border-top: 1px solid var(--border); padding-top: 8px; }
+.risk-chart {
+  display: block;
+  width: 100%;
+  height: 84px;
+  color: var(--muted);
+}
+.risk-band { fill: currentColor; opacity: 0.16; }
+.risk-midline { stroke: currentColor; stroke-width: 0.5; opacity: 0.35; stroke-dasharray: 3 3; }
+.risk-line { fill: none; stroke-width: 1.3; stroke-linejoin: round; stroke-linecap: round; }
+.risk-line-fragility { stroke: #6366f1; }
+.risk-line-stress { stroke: #f97316; }
+
+.risk-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  font-size: 0.66rem;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+.risk-legend-item { display: inline-flex; align-items: center; gap: 4px; }
+.risk-legend-bands { cursor: help; }
+.risk-dot { width: 8px; height: 8px; border-radius: 2px; display: inline-block; }
+.risk-dot-fragility { background: #6366f1; }
+.risk-dot-stress { background: #f97316; }
+.risk-dot-band { background: color-mix(in srgb, var(--muted) 40%, var(--surface)); }
+.risk-chart-axis {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.6rem;
+  color: var(--muted);
+  margin-top: 2px;
+}
+
+/* Analogen */
+.risk-analogs { border-top: 1px solid var(--border); padding-top: 8px; }
+.risk-analogs-summary { font-size: 0.72rem; margin-bottom: 6px; cursor: help; }
+.risk-analog-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 0.74rem;
+  padding: 1px 0;
+}
+.risk-analog-period { color: var(--muted); }
+.risk-analog-dd { font-variant-numeric: tabular-nums; cursor: help; }
+
+.risk-summary { border-top: 1px solid var(--border); padding-top: 8px; }
+.risk-summary-text { font-size: 0.78rem; line-height: 1.45; }
+
+/* Vaste regel — blijft ook zichtbaar als het paneel is ingeklapt. */
+.risk-disclaimer {
+  font-size: 0.66rem;
+  font-style: italic;
+  color: var(--muted);
+  border-top: 1px solid var(--border);
+  padding-top: 8px;
 }
 
 /* Chat wijkt af van de standaard .view: geen eigen scroll/padding, want

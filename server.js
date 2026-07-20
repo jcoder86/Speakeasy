@@ -9,6 +9,7 @@ const { db, UPLOADS_DIR } = require('./db');
 const quotes = require('./quotes');
 const rates = require('./rates');
 const movers = require('./movers');
+const risk = require('./risk');
 
 const app = express();
 app.use(express.json());
@@ -621,6 +622,14 @@ app.get('/api/rates', (req, res) => {
 // Biggest movers buiten je watchlist — zie movers.js (best-effort scraper).
 app.get('/api/movers', (req, res) => {
   res.json(movers.snapshot());
+});
+
+/* Marktrisico — proxy naar de Speakeasy-risk pipeline (zie risk.js).
+   snapshot() vangt zijn eigen fouten af en levert altijd een bruikbaar
+   object, dus hier geen try/catch: een storing wordt {available:false} en
+   de UI verbergt het paneel netjes. */
+app.get('/api/risk', async (req, res) => {
+  res.json(await risk.snapshot());
 });
 
 /* ---------- Start ---------- */

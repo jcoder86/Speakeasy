@@ -1218,6 +1218,405 @@ async function loadMovers() {
   renderMovers();
 }
 
+/* ===================================================================
+   MARKTRISICO-PANEEL — data uit de Speakeasy-risk pipeline (zie risk.js).
+   Alle modellering zit in die pipeline; hier wordt alleen getekend.
+   Bewust géén "crashkans"-getal: het paneel meet kwetsbaarheid.
+   =================================================================== */
+const riskMounts = [...document.querySelectorAll('.risk-mount')];
+let riskCache = null;
+let riskCollapsed = false;
+try {
+  riskCollapsed = localStorage.getItem('janapp-risk-collapsed') === '1';
+} catch { /* localStorage kan geblokkeerd zijn */ }
+
+const REGIME_META = {
+  calm: { cls: 'regime-calm', label: 'Kalm' },
+  fragile_calm: { cls: 'regime-fragile', label: 'Fragiele rust' },
+  shock: { cls: 'regime-shock', label: 'Schok' },
+  storm: { cls: 'regime-storm', label: 'Storm' },
+};
+
+const RISK_PILLARS = [
+  { key: 'valuation', axis: 'fragility', label: 'Waardering' },
+  { key: 'credit_slow', axis: 'fragility', label: 'Kredietcondities' },
+  { key: 'positioning', axis: 'fragility', label: 'Positionering' },
+  { key: 'volatility', axis: 'stress', label: 'Volatiliteit' },
+  { key: 'breadth', axis: 'stress', label: 'Marktbreedte' },
+  { key: 'credit_fast', axis: 'stress', label: 'Kredietstress' },
+];
+
+/* risk.json bevat géén delta per pijler — de 1-maandsbeweging staat alleen
+   per indicator in `drivers`. Deze mapping (design-doc §3) laat ons de
+   grootste beweger bínnen een pijler tonen, met in de tooltip welke
+   indicator dat is. Zo blijft het een gemeten getal i.p.v. een verzonnen
+   pijler-delta. */
+const PILLAR_INDICATORS = {
+  valuation: ['cape', 'excess_cape_yield'],
+  credit_slow: ['yield_curve_18m_min', 'nfci'],
+  positioning: ['margin_debt_yoy', 'top10_concentration'],
+  volatility: ['vix_ratio', 'trend_stress'],
+  breadth: ['sectors_above_200dma', 'rsp_spy_6m'],
+  credit_fast: ['baa_spread', 'baa_spread_63d'],
+};
+
+const INDICATOR_LABELS = {
+  cape: 'Shiller CAPE',
+  excess_cape_yield: 'Excess CAPE yield',
+  yield_curve_18m_min: 'Rentecurve 10j-3m',
+  nfci: 'Chicago Fed NFCI',
+  margin_debt_yoy: 'Margin debt (j/j)',
+  top10_concentration: 'Top-10-concentratie',
+  vix_ratio: 'VIX-termijnstructuur',
+  trend_stress: 'Trendstatus S&P 500',
+  sectors_above_200dma: 'Sectoren boven 200d MA',
+  rsp_spy_6m: 'RSP/SPY 6m',
+  baa_spread: 'Baa-spread',
+  baa_spread_63d: 'Baa-spread 63d',
+};
+
+// Gearceerde banden in de historische strip. Dit is waar het paneel zijn
+// vertrouwen verdient: je ziet zelf hoe het model zich bij 2008 gedroeg.
+const CRISIS_BANDS = [
+  { from: '2000-03-01', to: '2002-10-31', label: 'Dotcom-crash 2000-2002' },
+  { from: '2007-10-01', to: '2009-03-31', label: 'Kredietcrisis 2007-2009' },
+  { from: '2020-02-01', to: '2020-04-30', label: 'Coronacrash 2020' },
+  { from: '2022-01-01', to: '2022-10-31', label: 'Rente-schok 2022' },
+];
+
+const RISK_DISCLAIMER = 'Meet kwetsbaarheid, voorspelt geen crashes.';
+
+function riskEl(tag, cls, text) {
+  const el = document.createElement(tag);
+  if (cls) el.className = cls;
+  if (text !== undefined) el.textContent = text;
+  return el;
+}
+
+// "2025-11-25" -> "25 nov 2025"; hergebruikt de UTC-veilige datumhelper.
+function fmtRiskDate(iso) {
+  if (!iso) return null;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(iso)) return fmtRateDate(iso);
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? null : d.toLocaleDateString('nl-NL', {
+    day: 'numeric', month: 'short', year: 'numeric',
+  });
+}
+
+// "1999-11" -> "nov 1999"
+function fmtAnalogPeriod(p) {
+  const m = /^(\d{4})-(\d{2})$/.exec(String(p || ''));
+  if (!m) return String(p || '');
+  const d = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, 1));
+  return d.toLocaleDateString('nl-NL', { month: 'short', year: 'numeric', timeZone: 'UTC' });
+}
+
+/* Verzamelt per pijler: de grootste 1m-beweger uit drivers, plus of een van
+   de onderliggende indicatoren als stale gemarkeerd staat. */
+function pillarMeta(pillarKey, data) {
+  const keys = PILLAR_INDICATORS[pillarKey] || [];
+  let driver = null;
+  for (const d of data.drivers || []) {
+    if (!keys.includes(d.indicator)) continue;
+    if (!driver || Math.abs(d.delta_1m || 0) > Math.abs(driver.delta_1m || 0)) driver = d;
+  }
+  const stale = [];
+  for (const k of keys) {
+    const ind = (data.indicators || {})[k];
+    if (ind && ind.stale) stale.push(`${INDICATOR_LABELS[k] || k} (per ${fmtRiskDate(ind.as_of) || 'onbekend'})`);
+  }
+  return { driver, stale };
+}
+
+function buildPercentileMeter(label, value, axis) {
+  const row = riskEl('div', 'risk-meter');
+  row.appendChild(riskEl('span', 'risk-meter-label', label));
+
+  const track = riskEl('div', 'risk-meter-track');
+  const fill = riskEl('div', `risk-meter-fill risk-axis-${axis}`);
+  fill.style.width = `${Math.max(0, Math.min(100, value))}%`;
+  track.appendChild(fill);
+  row.appendChild(track);
+
+  row.appendChild(riskEl('span', 'risk-meter-value', String(Math.round(value))));
+  row.title = `${label}: ${Math.round(value)}e percentiel t.o.v. de historie sinds 1990.`;
+  return row;
+}
+
+function buildPillarRow(pillar, value, data) {
+  const { driver, stale } = pillarMeta(pillar.key, data);
+  const row = riskEl('div', 'risk-pillar');
+
+  const name = riskEl('span', 'risk-pillar-label');
+  name.appendChild(document.createTextNode(pillar.label));
+  if (stale.length) {
+    const warn = riskEl('span', 'kpi-warn', ' ⚠');
+    warn.title = `Verouderde indicator: ${stale.join(', ')}.`;
+    name.appendChild(warn);
+  }
+  row.appendChild(name);
+
+  const track = riskEl('div', 'risk-meter-track risk-meter-track-sm');
+  const fill = riskEl('div', `risk-meter-fill risk-axis-${pillar.axis}`);
+  fill.style.width = `${Math.max(0, Math.min(100, value))}%`;
+  track.appendChild(fill);
+  row.appendChild(track);
+
+  row.appendChild(riskEl('span', 'risk-pillar-value', String(Math.round(value))));
+
+  // Pijl alleen als er echt een gemeten beweging onder zit.
+  const delta = riskEl('span', 'risk-pillar-delta');
+  if (driver && Number.isFinite(driver.delta_1m) && driver.delta_1m !== 0) {
+    const up = driver.delta_1m > 0;
+    delta.classList.add(up ? 'up' : 'down');
+    delta.textContent = `${up ? '▲' : '▼'}${Math.abs(driver.delta_1m)}`;
+    delta.title = `Grootste beweger binnen deze pijler: ${INDICATOR_LABELS[driver.indicator] || driver.indicator}, `
+      + `${up ? '+' : ''}${driver.delta_1m} percentielpunten in een maand.`
+      + (driver.note_nl ? `\n\n${driver.note_nl}` : '');
+  } else {
+    delta.textContent = '';
+    delta.title = 'Geen 1-maandsbeweging gerapporteerd voor deze pijler.';
+  }
+  row.appendChild(delta);
+  return row;
+}
+
+/* Historische strip: beide assen sinds 1990 als inline SVG (geen chart-lib).
+   Vaste 0-100-schaal — dit zijn percentielen, dus automatisch schalen zou
+   een rustige periode er dramatisch uit laten zien. */
+function buildRiskChart(history) {
+  const pts = (history || []).filter((p) => p && p.d);
+  if (pts.length < 3) return null;
+
+  const w = 300;
+  const h = 84;
+  const padT = 4;
+  const padB = 11;
+  const t0 = Date.parse(pts[0].d);
+  const t1 = Date.parse(pts[pts.length - 1].d);
+  const span = t1 - t0 || 1;
+  const xOf = (iso) => ((Date.parse(iso) - t0) / span) * w;
+  const yOf = (v) => padT + (1 - v / 100) * (h - padT - padB);
+
+  const svg = document.createElementNS(SVG_NS, 'svg');
+  svg.setAttribute('viewBox', `0 0 ${w} ${h}`);
+  svg.setAttribute('preserveAspectRatio', 'none');
+  svg.classList.add('risk-chart');
+
+  // Crisisbanden achter de lijnen.
+  for (const band of CRISIS_BANDS) {
+    const x1 = xOf(band.from);
+    const x2 = xOf(band.to);
+    if (!Number.isFinite(x1) || !Number.isFinite(x2) || x2 <= 0 || x1 >= w) continue;
+    const rect = document.createElementNS(SVG_NS, 'rect');
+    const left = Math.max(0, x1);
+    rect.setAttribute('x', left.toFixed(1));
+    rect.setAttribute('y', '0');
+    rect.setAttribute('width', Math.max(1, Math.min(w, x2) - left).toFixed(1));
+    rect.setAttribute('height', String(h - padB));
+    rect.setAttribute('class', 'risk-band');
+    const title = document.createElementNS(SVG_NS, 'title');
+    title.textContent = band.label;
+    rect.appendChild(title);
+    svg.appendChild(rect);
+  }
+
+  // Basislijn op het 50e percentiel als visueel ankerpunt.
+  const mid = document.createElementNS(SVG_NS, 'line');
+  mid.setAttribute('x1', '0');
+  mid.setAttribute('x2', String(w));
+  mid.setAttribute('y1', yOf(50).toFixed(1));
+  mid.setAttribute('y2', yOf(50).toFixed(1));
+  mid.setAttribute('class', 'risk-midline');
+  svg.appendChild(mid);
+
+  // Twee reeksen. De stress-as start later dan 1990 (lege cellen in de CSV),
+  // dus segmenten breken netjes af i.p.v. door een gat te trekken.
+  for (const series of [{ prop: 'f', cls: 'risk-line-fragility' }, { prop: 's', cls: 'risk-line-stress' }]) {
+    let run = [];
+    const flush = () => {
+      if (run.length >= 2) {
+        const line = document.createElementNS(SVG_NS, 'polyline');
+        line.setAttribute('points', run.join(' '));
+        line.setAttribute('class', `risk-line ${series.cls}`);
+        svg.appendChild(line);
+      }
+      run = [];
+    };
+    for (const p of pts) {
+      const v = p[series.prop];
+      if (typeof v !== 'number' || !Number.isFinite(v)) { flush(); continue; }
+      run.push(`${xOf(p.d).toFixed(1)},${yOf(v).toFixed(1)}`);
+    }
+    flush();
+  }
+
+  return { svg, from: pts[0].d.slice(0, 4), to: pts[pts.length - 1].d.slice(0, 4) };
+}
+
+function buildRiskChartBlock(data) {
+  const wrap = riskEl('div', 'risk-chart-wrap');
+  const chart = buildRiskChart(data.history);
+  if (!chart) {
+    const hint = riskEl('p', 'muted-hint',
+      data.history_error ? 'Historie niet beschikbaar.' : 'Historie wordt opgebouwd.');
+    wrap.appendChild(hint);
+    return wrap;
+  }
+
+  const legend = riskEl('div', 'risk-legend');
+  for (const [cls, label] of [['risk-dot-fragility', 'Fragiliteit'], ['risk-dot-stress', 'Stress']]) {
+    const item = riskEl('span', 'risk-legend-item');
+    item.appendChild(riskEl('span', `risk-dot ${cls}`));
+    item.appendChild(document.createTextNode(label));
+    legend.appendChild(item);
+  }
+  const bands = riskEl('span', 'risk-legend-item risk-legend-bands');
+  bands.appendChild(riskEl('span', 'risk-dot risk-dot-band'));
+  bands.appendChild(document.createTextNode('crisisperiodes'));
+  bands.title = CRISIS_BANDS.map((b) => b.label).join(' · ');
+  legend.appendChild(bands);
+  wrap.appendChild(legend);
+
+  wrap.appendChild(chart.svg);
+
+  const axis = riskEl('div', 'risk-chart-axis');
+  axis.appendChild(riskEl('span', null, chart.from));
+  axis.appendChild(riskEl('span', null, chart.to));
+  wrap.appendChild(axis);
+  return wrap;
+}
+
+function buildAnalogsBlock(analogs) {
+  const wrap = riskEl('div', 'risk-analogs');
+  const list = (analogs || []).filter((a) => a && a.period);
+  if (!list.length) return null;
+
+  const head = riskEl('div', 'risk-section-title', 'Meest vergelijkbare periodes');
+  wrap.appendChild(head);
+
+  const dds = list.map((a) => a.fwd_12m_max_dd).filter((v) => typeof v === 'number' && Number.isFinite(v));
+  if (dds.length) {
+    const sorted = [...dds].sort((a, b) => a - b);
+    const median = sorted[Math.floor(sorted.length / 2)];
+    const sum = riskEl('div', 'risk-analogs-summary',
+      `${list.length} periodes · mediaan 12m-drawdown ${pct(median)}`);
+    sum.title = 'Wat er in de twaalf maanden ná die periodes gebeurde. '
+      + 'Historische parallel, geen voorspelling.';
+    wrap.appendChild(sum);
+  }
+
+  const MAX = 6;
+  for (const a of list.slice(0, MAX)) {
+    const row = riskEl('div', 'risk-analog-row');
+    row.appendChild(riskEl('span', 'risk-analog-period', fmtAnalogPeriod(a.period)));
+    const dd = riskEl('span', 'risk-analog-dd');
+    if (typeof a.fwd_12m_max_dd === 'number') {
+      dd.textContent = pct(a.fwd_12m_max_dd);
+      dd.classList.add(trendClass(a.fwd_12m_max_dd));
+    } else {
+      dd.textContent = '—';
+    }
+    dd.title = 'Maximale terugval in de 12 maanden na deze periode.';
+    row.appendChild(dd);
+    wrap.appendChild(row);
+  }
+  if (list.length > MAX) {
+    wrap.appendChild(riskEl('div', 'muted-hint', `+${list.length - MAX} vergelijkbare periodes`));
+  }
+  return wrap;
+}
+
+function buildRiskPanel(data) {
+  const card = riskEl('section', 'risk-card');
+  if (riskCollapsed) card.classList.add('collapsed');
+
+  /* --- kop: titel + regime-badge + inklapknop --- */
+  const head = riskEl('div', 'risk-head');
+  const titleWrap = riskEl('div', 'risk-title-wrap');
+  titleWrap.appendChild(riskEl('h3', 'news-heading', 'Marktrisico'));
+
+  const meta = REGIME_META[data.regime] || { cls: 'regime-fragile', label: data.regime };
+  const badge = riskEl('span', `risk-badge ${meta.cls}`, data.regime_label_nl || meta.label);
+  const since = fmtRiskDate(data.regime_since);
+  if (since) badge.title = `Regime "${data.regime_label_nl || meta.label}" sinds ${since}.`;
+  titleWrap.appendChild(badge);
+  head.appendChild(titleWrap);
+
+  const toggle = document.createElement('button');
+  toggle.type = 'button';
+  toggle.className = 'risk-toggle';
+  toggle.textContent = riskCollapsed ? '▸' : '▾';
+  toggle.setAttribute('aria-label', riskCollapsed ? 'Paneel uitklappen' : 'Paneel inklappen');
+  toggle.addEventListener('click', () => {
+    riskCollapsed = !riskCollapsed;
+    try { localStorage.setItem('janapp-risk-collapsed', riskCollapsed ? '1' : '0'); } catch { /* niet fataal */ }
+    renderRisk();
+  });
+  head.appendChild(toggle);
+  card.appendChild(head);
+
+  if (since) card.appendChild(riskEl('div', 'risk-since', `sinds ${since}`));
+
+  /* --- inklapbare body --- */
+  const body = riskEl('div', 'risk-body');
+
+  if (data.fragility && typeof data.fragility.score === 'number') {
+    body.appendChild(buildPercentileMeter('Fragiliteit', data.fragility.score, 'fragility'));
+  }
+  if (data.stress && typeof data.stress.score === 'number') {
+    body.appendChild(buildPercentileMeter('Stress', data.stress.score, 'stress'));
+  }
+
+  const pillarWrap = riskEl('div', 'risk-pillars');
+  for (const p of RISK_PILLARS) {
+    const src = p.axis === 'fragility' ? data.fragility : data.stress;
+    const val = src && src.pillars ? src.pillars[p.key] : undefined;
+    if (typeof val !== 'number') continue;
+    pillarWrap.appendChild(buildPillarRow(p, val, data));
+  }
+  if (pillarWrap.children.length) body.appendChild(pillarWrap);
+
+  body.appendChild(buildRiskChartBlock(data));
+
+  const analogs = buildAnalogsBlock(data.analogs);
+  if (analogs) body.appendChild(analogs);
+
+  // Alleen tonen als de pipeline daadwerkelijk iets te melden had.
+  if (data.ai_summary_nl) {
+    const sum = riskEl('div', 'risk-summary');
+    sum.appendChild(riskEl('div', 'risk-section-title', 'Wat er veranderde'));
+    sum.appendChild(riskEl('p', 'risk-summary-text', data.ai_summary_nl));
+    body.appendChild(sum);
+  }
+
+  card.appendChild(body);
+
+  // Vaste regel, altijd zichtbaar — ook ingeklapt.
+  card.appendChild(riskEl('div', 'risk-disclaimer', RISK_DISCLAIMER));
+  return card;
+}
+
+function renderRisk() {
+  if (!riskMounts.length) return;
+  for (const mount of riskMounts) {
+    mount.innerHTML = '';
+    if (!riskCache || !riskCache.available) continue;
+    mount.appendChild(buildRiskPanel(riskCache));
+  }
+}
+
+async function loadRisk() {
+  try {
+    const res = await fetch('/api/risk');
+    riskCache = await res.json();
+  } catch {
+    // Netwerkfout: paneel blijft simpelweg weg, geen halve staat tonen.
+    riskCache = { available: false };
+  }
+  renderRisk();
+}
+
 function renderHomeNews() {
   if (!homeNewsStocksEl) return;
   homeNewsStocksEl.innerHTML = '';
@@ -2051,6 +2450,7 @@ loadStockNews();
 loadFeedNews();
 loadRates();
 loadMovers();
+loadRisk();
 connectSSE();
 setView('home'); // default: dashboard/home
 
@@ -2063,6 +2463,8 @@ setInterval(loadStockNews, 15 * 60 * 1000);
 setInterval(loadFeedNews, 15 * 60 * 1000);
 // Movers elke 30 min (matcht server-cache).
 setInterval(loadMovers, 30 * 60 * 1000);
+// Risk elk half uur (matcht de server-cache; de pipeline zelf draait 1x/dag).
+setInterval(loadRisk, 30 * 60 * 1000);
 // Markt-status/"bijgewerkt"-tekst tikt door, ook zonder nieuwe koersdata.
 updateMarketStatus();
 setInterval(updateMarketStatus, 30 * 1000);

@@ -12,7 +12,7 @@
  */
 
 // v6: nieuws-curatie (dedup + headlines/fold-out), sparkline-periode-label.
-const CACHE_VERSION = 'janapp-v19';
+const CACHE_VERSION = 'janapp-v20';
 const STATIC_ASSETS = [
   '/',
   '/index.html',
