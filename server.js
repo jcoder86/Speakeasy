@@ -507,6 +507,9 @@ async function fetchTickerNews(ticker, apiKey) {
 }
 
 const STOCK_NEWS_MAX = 18;
+// Max artikelen per aandeel in de eindlijst. Zonder deze cap kon één druk
+// aandeel (bv. Micron rond earnings) de hele feed vullen met 3-4 eigen koppen.
+const PER_TICKER_NEWS_CAP = 2;
 // Titel normaliseren voor dedup: dezelfde kop van een ander persbureau (of onder
 // een ander aandeel) telt als één artikel. Álle niet-alfanumerieke tekens weg
 // (incl. spaties/leestekens), zodat "S&P500" en "S&P 500!" ook samenvallen.
@@ -558,7 +561,7 @@ app.get('/api/news/stocks', async (req, res) => {
     const h = (now - ts) / 3.6e6;
     return h < 6 ? 3 : h < 24 ? 2 : h < 72 ? 1 : 0;
   };
-  const items = [...byKey.values()]
+  const ranked = [...byKey.values()]
     .map((e) => ({
       title: e.title,
       summary: e.summary,
@@ -568,8 +571,20 @@ app.get('/api/news/stocks', async (req, res) => {
       tickers: [...e.tickers],
       score: e.tickers.size + recency(e.published_at),
     }))
-    .sort((a, b) => b.score - a.score || b.published_at - a.published_at)
-    .slice(0, STOCK_NEWS_MAX);
+    .sort((a, b) => b.score - a.score || b.published_at - a.published_at);
+
+  // Greedy selecteren met een cap per aandeel, zodat de feed gespreid blijft.
+  // Een artikel mag mee zolang minstens één betrokken aandeel nog ruimte heeft
+  // — zo blokkeert de cap wél een mono-Micron-stroom, maar houdt hij een
+  // artikel dat óók over een ander aandeel gaat (bredere relevantie) gewoon.
+  const perTicker = new Map();
+  const items = [];
+  for (const it of ranked) {
+    if (items.length >= STOCK_NEWS_MAX) break;
+    if (!it.tickers.some((t) => (perTicker.get(t) || 0) < PER_TICKER_NEWS_CAP)) continue;
+    items.push(it);
+    for (const t of it.tickers) perTicker.set(t, (perTicker.get(t) || 0) + 1);
+  }
 
   res.json({ items });
 });

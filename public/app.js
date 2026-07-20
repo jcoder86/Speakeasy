@@ -2024,7 +2024,9 @@ function renderTodoView(el, todo) {
   const actions = document.createElement('div');
   actions.className = 'item-actions';
   actions.appendChild(makeIconBtn('✎', 'Bewerk', () => renderTodoEdit(el, todo)));
-  actions.appendChild(makeIconBtn('✕', 'Verwijder', () => deleteTodo(todo.id)));
+  const delBtn = makeIconBtn('✕', 'Verwijder', () => deleteTodo(todo.id));
+  delBtn.classList.add('icon-btn-danger');
+  actions.appendChild(delBtn);
   el.appendChild(actions);
 }
 

@@ -1201,6 +1201,16 @@ main {
   font-size: 0.9rem;
   line-height: 1;
 }
+/* Het vierkantje blijft 32px, maar het glyph erin mag groter zodat het de
+   knop beter vult. Staat ná ".todo .icon-btn" (zelfde specificiteit) en wint
+   daarom van diens kleinere font-size. */
+.todo .icon-btn-square {
+  font-size: 1.25rem;
+}
+/* Verwijder-X subtiel rood — genoeg om te waarschuwen, zonder de knop tot een
+   volvlak-rode alarmknop te maken. Rand/achtergrond blijven neutraal. */
+.icon-btn-danger { color: #dc2626; }
+.icon-btn-danger:hover { color: #b91c1c; }
 
 /* Open to-do's zijn sleepbaar (ingedrukt houden, zie enableTodoDrag) — de
    cursor hint dat al vóór je begint te slepen. Niet op de knoppen zelf. */
