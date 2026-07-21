@@ -10,6 +10,7 @@ const quotes = require('./quotes');
 const rates = require('./rates');
 const movers = require('./movers');
 const risk = require('./risk');
+const agenda = require('./agenda');
 
 const app = express();
 app.use(express.json());
@@ -645,6 +646,13 @@ app.get('/api/movers', (req, res) => {
    de UI verbergt het paneel netjes. */
 app.get('/api/risk', async (req, res) => {
   res.json(await risk.snapshot());
+});
+
+/* Agenda — proxy naar het geheime Google Calendar iCal-adres (zie agenda.js).
+   Net als risk: snapshot() faalt nooit hard, geeft {available:false} bij een
+   ontbrekende CAL_URL of een storing. */
+app.get('/api/agenda', async (req, res) => {
+  res.json(await agenda.snapshot());
 });
 
 /* ---------- Start ---------- */

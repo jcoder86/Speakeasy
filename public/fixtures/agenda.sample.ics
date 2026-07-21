@@ -1,0 +1,44 @@
+BEGIN:VCALENDAR
+PRODID:-//JanApp//Agenda fixture//NL
+VERSION:2.0
+CALSCALE:GREGORIAN
+BEGIN:VEVENT
+UID:standup@janapp.fixture
+SUMMARY:Wekelijkse standup
+DTSTART;TZID=Europe/Amsterdam:20240101T090000
+DTEND;TZID=Europe/Amsterdam:20240101T091500
+RRULE:FREQ=WEEKLY;BYDAY=MO
+END:VEVENT
+BEGIN:VEVENT
+UID:sport@janapp.fixture
+SUMMARY:Sportschool
+DTSTART;TZID=Europe/Amsterdam:20240103T183000
+DTEND;TZID=Europe/Amsterdam:20240103T193000
+RRULE:FREQ=WEEKLY;BYDAY=WE,SA
+END:VEVENT
+BEGIN:VEVENT
+UID:verjaardag@janapp.fixture
+SUMMARY:Verjaardag Sanne
+DTSTART;VALUE=DATE:20200215
+RRULE:FREQ=YEARLY
+END:VEVENT
+BEGIN:VEVENT
+UID:tandarts@janapp.fixture
+SUMMARY:Tandarts\, halfjaarlijkse controle
+DTSTART;TZID=Europe/Amsterdam:20991110T143000
+DTEND;TZID=Europe/Amsterdam:20991110T150000
+END:VEVENT
+BEGIN:VEVENT
+UID:vakantie@janapp.fixture
+SUMMARY:Vakantie Italie
+DTSTART;VALUE=DATE:20990801
+DTEND;VALUE=DATE:20990815
+END:VEVENT
+BEGIN:VEVENT
+UID:review@janapp.fixture
+SUMMARY:Kwartaalreview met een nogal lange titel die over meerdere regel
+ s in het bestand gevouwen staat
+DTSTART:20991201T130000Z
+DTEND:20991201T140000Z
+END:VEVENT
+END:VCALENDAR

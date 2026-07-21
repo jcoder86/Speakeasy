@@ -93,9 +93,9 @@
               </div>
               <div class="kpi-sub" id="kpi-crypto-sub">Laden…</div>
             </div>
-            <div class="kpi-card">
+            <div class="kpi-card kpi-card-agenda">
               <div class="kpi-label">Agenda</div>
-              <div class="kpi-placeholder">Binnenkort beschikbaar</div>
+              <div class="kpi-agenda" id="kpi-agenda"></div>
             </div>
           </div>
 
@@ -181,11 +181,10 @@
           </section>
         </section>
 
-        <section id="agenda-view" class="view placeholder-view">
-          <div class="feed-placeholder">
-            <h2>Agenda</h2>
-            <p>Komt in een latere fase: koppeling met Google Calendar.</p>
-          </div>
+        <section id="agenda-view" class="view">
+          <h2 class="page-heading">Agenda</h2>
+          <div id="agenda-list"></div>
+          <p id="agenda-empty" class="muted-hint" hidden>Geen komende afspraken.</p>
         </section>
 
         <section id="todo-view" class="view">

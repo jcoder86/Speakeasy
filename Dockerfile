@@ -9,7 +9,7 @@ RUN npm ci --omit=dev
 
 # Applicatiebestanden. LET OP: nieuwe top-level .js-modules hier toevoegen,
 # anders crasht de container op een ontbrekende require.
-COPY server.js db.js quotes.js rates.js movers.js risk.js ./
+COPY server.js db.js quotes.js rates.js movers.js risk.js agenda.js ./
 COPY public ./public
 COPY scripts ./scripts
 

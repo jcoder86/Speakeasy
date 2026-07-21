@@ -50,6 +50,9 @@ const kpiOilSparkEl = document.getElementById('kpi-oil-spark');
 const kpiCryptoValueEl = document.getElementById('kpi-crypto-value');
 const kpiCryptoSubEl = document.getElementById('kpi-crypto-sub');
 const kpiCryptoSparkEl = document.getElementById('kpi-crypto-spark');
+const kpiAgendaEl = document.getElementById('kpi-agenda');
+const agendaListEl = document.getElementById('agenda-list');
+const agendaEmptyEl = document.getElementById('agenda-empty');
 const homeStocksExcerptEl = document.getElementById('home-stocks-excerpt');
 const homeMoversEl = document.getElementById('home-movers');
 const homeNewsStocksEl = document.getElementById('home-news-stocks');
@@ -1617,6 +1620,106 @@ async function loadRisk() {
   renderRisk();
 }
 
+/* ===================================================================
+   AGENDA — komende afspraken uit het geheime Google Calendar iCal-adres
+   (zie agenda.js). Het Home-blok toont de eerstvolgende 3 als
+   "Datum - Onderwerp"; de Agenda-pagina toont de volledige lijst.
+   =================================================================== */
+let agendaCache = { available: false, events: [] };
+const KPI_AGENDA_COUNT = 3;
+
+// "Datum" voor een afspraak: all-day -> "za 2 aug", met tijd -> "wo 30 jul
+// 14:00". Vandaag/morgen krijgen een woord i.p.v. een datum, dat leest
+// natuurlijker in een kort blok. UTC-veilig voor all-day (kalenderdatum).
+function agendaWhen(ev) {
+  let d;
+  if (ev.all_day) {
+    d = new Date(`${ev.date}T00:00:00Z`);
+  } else {
+    d = new Date(ev.start_ms);
+  }
+  if (Number.isNaN(d.getTime())) return '';
+
+  const opts = ev.all_day
+    ? { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' }
+    : { weekday: 'short', day: 'numeric', month: 'short' };
+  let label = d.toLocaleDateString('nl-NL', opts);
+
+  // Vandaag / morgen herkennen op kalenderdatum (lokale dag voor timed events,
+  // UTC-dag voor all-day — dat is de dag zoals in de agenda genoteerd).
+  const dayKey = ev.all_day
+    ? ev.date
+    : `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  const now = new Date();
+  const todayKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  const tmr = new Date(now.getTime() + 864e5);
+  const tmrKey = `${tmr.getFullYear()}-${String(tmr.getMonth() + 1).padStart(2, '0')}-${String(tmr.getDate()).padStart(2, '0')}`;
+  if (dayKey === todayKey) label = 'Vandaag';
+  else if (dayKey === tmrKey) label = 'Morgen';
+
+  if (!ev.all_day) {
+    label += ' ' + d.toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit' });
+  }
+  return label;
+}
+
+function agendaLine(ev) {
+  const row = document.createElement('div');
+  row.className = 'agenda-row';
+  const when = document.createElement('span');
+  when.className = 'agenda-when';
+  when.textContent = agendaWhen(ev);
+  const sep = document.createTextNode(' - ');
+  const what = document.createElement('span');
+  what.className = 'agenda-what';
+  what.textContent = ev.summary;
+  row.appendChild(when);
+  row.appendChild(sep);
+  row.appendChild(what);
+  row.title = `${agendaWhen(ev)} - ${ev.summary}`;
+  return row;
+}
+
+function renderAgenda() {
+  // Home-KPI-blok: eerstvolgende 3.
+  if (kpiAgendaEl) {
+    kpiAgendaEl.innerHTML = '';
+    if (!agendaCache.available) {
+      kpiAgendaEl.innerHTML = '<span class="kpi-placeholder">Niet gekoppeld</span>';
+    } else if (!agendaCache.events.length) {
+      kpiAgendaEl.innerHTML = '<span class="kpi-placeholder">Geen komende afspraken</span>';
+    } else {
+      for (const ev of agendaCache.events.slice(0, KPI_AGENDA_COUNT)) {
+        kpiAgendaEl.appendChild(agendaLine(ev));
+      }
+    }
+  }
+
+  // Volledige Agenda-pagina: hele lijst.
+  if (agendaListEl) {
+    agendaListEl.innerHTML = '';
+    const events = agendaCache.available ? agendaCache.events : [];
+    for (const ev of events) agendaListEl.appendChild(agendaLine(ev));
+    if (agendaEmptyEl) {
+      agendaEmptyEl.hidden = events.length > 0;
+      agendaEmptyEl.textContent = agendaCache.available
+        ? 'Geen komende afspraken.'
+        : 'Nog geen agenda gekoppeld.';
+    }
+  }
+}
+
+async function loadAgenda() {
+  try {
+    const res = await fetch('/api/agenda');
+    const data = await res.json();
+    agendaCache = { available: !!data.available, events: Array.isArray(data.events) ? data.events : [] };
+  } catch {
+    agendaCache = { available: false, events: [] };
+  }
+  renderAgenda();
+}
+
 function renderHomeNews() {
   if (!homeNewsStocksEl) return;
   homeNewsStocksEl.innerHTML = '';
@@ -2453,6 +2556,7 @@ loadFeedNews();
 loadRates();
 loadMovers();
 loadRisk();
+loadAgenda();
 connectSSE();
 setView('home'); // default: dashboard/home
 
@@ -2467,6 +2571,8 @@ setInterval(loadFeedNews, 15 * 60 * 1000);
 setInterval(loadMovers, 30 * 60 * 1000);
 // Risk elk half uur (matcht de server-cache; de pipeline zelf draait 1x/dag).
 setInterval(loadRisk, 30 * 60 * 1000);
+// Agenda elk half uur (matcht de server-cache; Google ververst de feed traag).
+setInterval(loadAgenda, 30 * 60 * 1000);
 // Markt-status/"bijgewerkt"-tekst tikt door, ook zonder nieuwe koersdata.
 updateMarketStatus();
 setInterval(updateMarketStatus, 30 * 1000);
