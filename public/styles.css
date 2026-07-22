@@ -530,8 +530,9 @@ main {
 }
 .kpi-value-row .kpi-spark { margin-top: 0; }
 .kpi-spark svg { display: block; }
-/* Extra-klein sub-regeltje (bv. ABN AMRO-tarief onder het NL-gemiddelde). */
-.kpi-sub-xs { font-size: 0.64rem; margin-top: -1px; }
+/* De hypotheek-sub bevat twee tarieven (NL-gem. + ABN) op één regel; iets
+   kleiner zodat "ABN X,XX%" ook op de krapste kaartbreedte niet wegvalt. */
+#kpi-mortgage-sub { font-size: 0.63rem; }
 /* Periode van de trendlijn, klein onder de lijn: een grafiek zonder tijdvak
    is niet te interpreteren (week of twee jaar scheelt nogal). */
 .kpi-period {

@@ -44,7 +44,6 @@ const kpiMortgageValueEl = document.getElementById('kpi-mortgage-value');
 const kpiMortgageSubEl = document.getElementById('kpi-mortgage-sub');
 const kpiMortgageSparkEl = document.getElementById('kpi-mortgage-spark');
 const kpiMortgageWarnEl = document.getElementById('kpi-mortgage-warn');
-const kpiMortgageAbnEl = document.getElementById('kpi-mortgage-abn');
 const kpiOilValueEl = document.getElementById('kpi-oil-value');
 const kpiOilSubEl = document.getElementById('kpi-oil-sub');
 const kpiOilSparkEl = document.getElementById('kpi-oil-spark');
@@ -1916,22 +1915,22 @@ async function loadRates() {
 
     if (data.mortgage) {
       kpiMortgageValueEl.textContent = data.mortgage.rate.toLocaleString('nl-NL', { minimumFractionDigits: 2 }) + '%';
-      kpiMortgageSubEl.textContent = 'NL-gem. · ~10j vast';
-      renderRateSpark(kpiMortgageSparkEl, data.mortgage.spark, data.mortgage.spark_period);
-      // Secundair, klein: ABN AMRO's geadverteerde 10j-tarief ter vergelijking.
+      // ABN AMRO's 10j-tarief (Budget NHG) inline achter het NL-gemiddelde,
+      // op één regel — scheelt hoogte t.o.v. een aparte regel eronder.
       const abn = data.mortgage.abn_rate;
-      if (kpiMortgageAbnEl) {
-        if (typeof abn === 'number' && Number.isFinite(abn)) {
-          kpiMortgageAbnEl.textContent = `ABN AMRO: ${abn.toLocaleString('nl-NL', { minimumFractionDigits: 2 })}%`;
-          kpiMortgageAbnEl.hidden = false;
-        } else {
-          kpiMortgageAbnEl.hidden = true;
-        }
+      let sub = 'NL-gem. · 10j';
+      if (typeof abn === 'number' && Number.isFinite(abn)) {
+        sub += ` · ABN ${abn.toLocaleString('nl-NL', { minimumFractionDigits: 2 })}%`;
+      } else {
+        sub = 'NL-gem. · 10j vast';
       }
+      kpiMortgageSubEl.textContent = sub;
+      kpiMortgageSubEl.title = 'NL-gemiddelde (ECB, ~10j vast) · ABN AMRO 10j vast NHG (Budget)';
+      renderRateSpark(kpiMortgageSparkEl, data.mortgage.spark, data.mortgage.spark_period);
     } else {
       kpiMortgageValueEl.textContent = '–';
       kpiMortgageSubEl.textContent = data.mortgage_error ? 'Niet beschikbaar' : 'Laden…';
-      if (kpiMortgageAbnEl) kpiMortgageAbnEl.hidden = true;
+      kpiMortgageSubEl.title = '';
     }
     applyWarn(kpiMortgageWarnEl, staleWarning({
       error: data.mortgage_error,

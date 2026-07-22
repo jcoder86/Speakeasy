@@ -41,9 +41,10 @@ const ECB_URL =
 const MORTGAGE_URL =
   'https://data-api.ecb.europa.eu/service/data/MIR/M.NL.B.A2C.P.R.A.2250.EUR.N' +
   '?format=jsondata&startPeriod=2026-01';
-// Secundair, klein: ABN AMRO's actuele geadverteerde 10j-vast-tarief (NHG,
-// "Woning Hypotheek"). Best-effort scrape; faalt hij, dan blijft de
-// NL-gemiddelde gewoon staan zonder het ABN-regeltje.
+// Secundair, klein: ABN AMRO's actuele geadverteerde 10j-vast-tarief. We
+// tonen het "Budget"-product (10j NHG) — dat ligt het dichtst bij het tarief
+// dat ABN op de eigen site headlinet. Best-effort scrape; faalt hij, dan
+// blijft de NL-gemiddelde gewoon staan zonder het ABN-regeltje.
 const MORTGAGE_ABN_URL = 'https://www.actuelerentestanden.nl/hypotheek/rente/abn-amro';
 const REFRESH_MS = 24 * 60 * 60 * 1000; // 1x per dag
 const FETCH_TIMEOUT_MS = 15000;
@@ -149,7 +150,7 @@ async function fetchEcbMortgage() {
   };
 }
 
-// ABN AMRO 10j-vast (NHG, "Woning"): één klein getal ter vergelijking naast
+// ABN AMRO 10j-vast (NHG, "Budget"): één klein getal ter vergelijking naast
 // het NL-gemiddelde. De pagina heeft twee producttabellen (Budget + Woning);
 // bij een layoutwijziging valt hij terug op de eerste i.p.v. niets.
 async function fetchAbnRate() {
@@ -167,7 +168,7 @@ async function fetchAbnRate() {
     /<table class="finckers-datatable finckers-table-mortgage finckers-table-mortgage-product"[^>]*>[\s\S]*?<\/table>/g,
   );
   if (!tables || !tables.length) return null;
-  const table = tables.find((t) => /ffa_product=Woning/.test(t)) || tables[0];
+  const table = tables.find((t) => /ffa_product=Budget/.test(t)) || tables[0];
   const m = table.match(/data-order=10>10 jaar<\/td>\s*<td data-order=([\d.]+)>/);
   const rate = m ? parseFloat(m[1]) : NaN;
   return Number.isFinite(rate) ? rate : null;
