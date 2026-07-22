@@ -82,6 +82,21 @@ function parseHistoryCsv(text) {
   return out;
 }
 
+// Verandering van een as ('f' of 's') t.o.v. ~1 maand geleden, uit de volle
+// historie (weekpunten). Zoekt de meest recente rij >= 28 dagen vóór de
+// laatste. Levert een afgerond getal of null (te weinig/ongeldige data).
+function recentDelta(points, key) {
+  const valid = (points || []).filter((p) => p && p.d && typeof p[key] === 'number' && Number.isFinite(p[key]));
+  if (valid.length < 2) return null;
+  const last = valid[valid.length - 1];
+  const lastMs = Date.parse(last.d);
+  let ref = valid[0];
+  for (let i = valid.length - 1; i >= 0; i--) {
+    if (lastMs - Date.parse(valid[i].d) >= 28 * 864e5) { ref = valid[i]; break; }
+  }
+  return Number((last[key] - ref[key]).toFixed(1));
+}
+
 // Uitdunnen met behoud van eerste en laatste punt; de UI plaatst x op de
 // échte datum, dus ongelijke tussenafstanden zijn geen probleem.
 function downsample(points, target) {
@@ -131,6 +146,13 @@ async function build() {
     console.error('[risk] history.csv ophalen mislukt:', historyError);
   }
 
+  // Recente beweging van beide assen: het verschil t.o.v. ~1 maand geleden,
+  // uit de volledige (niet-uitgedunde) historie. Geeft de UI een richting
+  // (recent gestegen/gedaald) voor de compacte change-driehoekjes. De pipeline
+  // levert geen score-delta, dus rekenen we 'm hier uit de tijdreeks.
+  const fragility = risk.fragility ? { ...risk.fragility, delta: recentDelta(history, 'f') } : null;
+  const stress = risk.stress ? { ...risk.stress, delta: recentDelta(history, 's') } : null;
+
   return {
     available: true,
     source: usedFixture ? 'fixture' : 'remote',
@@ -138,8 +160,8 @@ async function build() {
     regime: risk.regime,
     regime_label_nl: risk.regime_label_nl || null,
     regime_since: risk.regime_since || null,
-    fragility: risk.fragility || null,
-    stress: risk.stress || null,
+    fragility,
+    stress,
     drivers: Array.isArray(risk.drivers) ? risk.drivers : [],
     analogs: Array.isArray(risk.analogs) ? risk.analogs : [],
     ai_summary_nl: risk.ai_summary_nl || null,

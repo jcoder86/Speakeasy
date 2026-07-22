@@ -530,6 +530,8 @@ main {
 }
 .kpi-value-row .kpi-spark { margin-top: 0; }
 .kpi-spark svg { display: block; }
+/* Extra-klein sub-regeltje (bv. ABN AMRO-tarief onder het NL-gemiddelde). */
+.kpi-sub-xs { font-size: 0.64rem; margin-top: -1px; }
 /* Periode van de trendlijn, klein onder de lijn: een grafiek zonder tijdvak
    is niet te interpreteren (week of twee jaar scheelt nogal). */
 .kpi-period {
@@ -808,18 +810,22 @@ main {
 .risk-card.collapsed .risk-body,
 .risk-card.collapsed .risk-since { display: none; }
 
-/* Meters: label, balk en getal op een vast raster, zodat alle balken
-   onder elkaar netjes uitlijnen. */
+/* De twee headline-meters staan altijd zichtbaar (ook ingeklapt). */
+.risk-meters { display: flex; flex-direction: column; gap: 6px; }
+
+/* Meters: label, balk, getal en change-driehoekje op een vast raster, zodat
+   alle balken onder elkaar netjes uitlijnen. */
 .risk-meter,
 .risk-pillar {
   display: grid;
   align-items: center;
 }
-.risk-meter { grid-template-columns: 74px 1fr 26px; gap: 8px; }
+.risk-meter { grid-template-columns: 74px 1fr 22px 16px; gap: 8px; }
 .risk-pillar { grid-template-columns: 106px 1fr 22px 30px; gap: 6px; }
 
 .risk-meter-label { font-size: 0.78rem; font-weight: 600; }
 .risk-meter-value { font-size: 0.82rem; font-weight: 700; text-align: right; }
+.risk-meter-delta { font-size: 0.7rem; text-align: right; cursor: help; }
 .risk-pillar-label {
   font-size: 0.72rem;
   color: var(--muted);

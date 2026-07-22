@@ -41,6 +41,10 @@ const ECB_URL =
 const MORTGAGE_URL =
   'https://data-api.ecb.europa.eu/service/data/MIR/M.NL.B.A2C.P.R.A.2250.EUR.N' +
   '?format=jsondata&startPeriod=2026-01';
+// Secundair, klein: ABN AMRO's actuele geadverteerde 10j-vast-tarief (NHG,
+// "Woning Hypotheek"). Best-effort scrape; faalt hij, dan blijft de
+// NL-gemiddelde gewoon staan zonder het ABN-regeltje.
+const MORTGAGE_ABN_URL = 'https://www.actuelerentestanden.nl/hypotheek/rente/abn-amro';
 const REFRESH_MS = 24 * 60 * 60 * 1000; // 1x per dag
 const FETCH_TIMEOUT_MS = 15000;
 const ECB_HISTORY_DAYS = 730;   // 2 jaar ECB-historie voor de trendlijn
@@ -145,6 +149,30 @@ async function fetchEcbMortgage() {
   };
 }
 
+// ABN AMRO 10j-vast (NHG, "Woning"): één klein getal ter vergelijking naast
+// het NL-gemiddelde. De pagina heeft twee producttabellen (Budget + Woning);
+// bij een layoutwijziging valt hij terug op de eerste i.p.v. niets.
+async function fetchAbnRate() {
+  const ctrl = new AbortController();
+  const timeout = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT_MS);
+  let html;
+  try {
+    const r = await fetch(MORTGAGE_ABN_URL, { signal: ctrl.signal, headers: UA });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    html = await r.text();
+  } finally {
+    clearTimeout(timeout);
+  }
+  const tables = html.match(
+    /<table class="finckers-datatable finckers-table-mortgage finckers-table-mortgage-product"[^>]*>[\s\S]*?<\/table>/g,
+  );
+  if (!tables || !tables.length) return null;
+  const table = tables.find((t) => /ffa_product=Woning/.test(t)) || tables[0];
+  const m = table.match(/data-order=10>10 jaar<\/td>\s*<td data-order=([\d.]+)>/);
+  const rate = m ? parseFloat(m[1]) : NaN;
+  return Number.isFinite(rate) ? rate : null;
+}
+
 async function refresh(broadcast) {
   let ecb = null;
   let mortgage = null;
@@ -160,6 +188,16 @@ async function refresh(broadcast) {
     mortgage = await fetchEcbMortgage();
   } catch (err) {
     mortgageError = String(err.message || err);
+  }
+  // ABN AMRO-tarief is bijzaak: een mislukte scrape mag de kaart niet raken,
+  // dus apart en zonder de hoofd-mortgageError te zetten. Laatst bekende
+  // waarde blijft staan als het even niet lukt.
+  try {
+    const abn = await fetchAbnRate();
+    if (mortgage) mortgage.abn_rate = abn;
+    else if (abn !== null && cache.mortgage) cache.mortgage.abn_rate = abn;
+  } catch (err) {
+    console.error('[rates] ABN AMRO-tarief:', String(err.message || err));
   }
 
   const now = Date.now();

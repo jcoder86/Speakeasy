@@ -44,6 +44,7 @@ const kpiMortgageValueEl = document.getElementById('kpi-mortgage-value');
 const kpiMortgageSubEl = document.getElementById('kpi-mortgage-sub');
 const kpiMortgageSparkEl = document.getElementById('kpi-mortgage-spark');
 const kpiMortgageWarnEl = document.getElementById('kpi-mortgage-warn');
+const kpiMortgageAbnEl = document.getElementById('kpi-mortgage-abn');
 const kpiOilValueEl = document.getElementById('kpi-oil-value');
 const kpiOilSubEl = document.getElementById('kpi-oil-sub');
 const kpiOilSparkEl = document.getElementById('kpi-oil-spark');
@@ -1331,7 +1332,11 @@ function pillarMeta(pillarKey, data) {
   return { driver, stale };
 }
 
-function buildPercentileMeter(label, value, axis) {
+// Onder deze grootte (percentielpunten) noemen we een beweging "vlak" en
+// tonen we geen driehoekje — anders knippert er ruis bij elke minicorrectie.
+const RISK_DELTA_MIN = 1;
+
+function buildPercentileMeter(label, value, axis, delta) {
   const row = riskEl('div', 'risk-meter');
   row.appendChild(riskEl('span', 'risk-meter-label', label));
 
@@ -1342,7 +1347,25 @@ function buildPercentileMeter(label, value, axis) {
   row.appendChild(track);
 
   row.appendChild(riskEl('span', 'risk-meter-value', String(Math.round(value))));
-  row.title = `${label}: ${Math.round(value)}e percentiel t.o.v. de historie sinds 1990.`;
+
+  // Change-driehoekje: groen ▲ als recent gestegen, rood ▼ als gedaald,
+  // niets bij een verwaarloosbare beweging. Richting-kleur (niet sentiment):
+  // consistent met de pijler-delta's elders in het paneel.
+  const arrow = riskEl('span', 'risk-meter-delta');
+  if (typeof delta === 'number' && Number.isFinite(delta) && Math.abs(delta) >= RISK_DELTA_MIN) {
+    const up = delta > 0;
+    arrow.classList.add(up ? 'up' : 'down');
+    arrow.textContent = up ? '▲' : '▼';
+    arrow.title = `${label} ${up ? '+' : ''}${delta} percentielpunten t.o.v. ~1 maand geleden.`;
+  } else {
+    arrow.title = `${label} nagenoeg ongewijzigd t.o.v. ~1 maand geleden.`;
+  }
+  row.appendChild(arrow);
+
+  const trend = typeof delta === 'number' && Math.abs(delta) >= RISK_DELTA_MIN
+    ? ` — ${delta > 0 ? '+' : ''}${delta} vs ~1 mnd geleden`
+    : '';
+  row.title = `${label}: ${Math.round(value)}e percentiel t.o.v. de historie sinds 1990${trend}.`;
   return row;
 }
 
@@ -1561,15 +1584,20 @@ function buildRiskPanel(data) {
 
   if (since) card.appendChild(riskEl('div', 'risk-since', `sinds ${since}`));
 
-  /* --- inklapbare body --- */
-  const body = riskEl('div', 'risk-body');
-
+  /* --- altijd zichtbaar: de twee headline-meters met change-driehoekje ---
+     Bewust búiten de inklapbare body, zodat je ook ingeklapt in één oogopslag
+     ziet hoe fragiliteit en stress ervoor staan en of ze recent bewogen. */
+  const meters = riskEl('div', 'risk-meters');
   if (data.fragility && typeof data.fragility.score === 'number') {
-    body.appendChild(buildPercentileMeter('Fragiliteit', data.fragility.score, 'fragility'));
+    meters.appendChild(buildPercentileMeter('Fragiliteit', data.fragility.score, 'fragility', data.fragility.delta));
   }
   if (data.stress && typeof data.stress.score === 'number') {
-    body.appendChild(buildPercentileMeter('Stress', data.stress.score, 'stress'));
+    meters.appendChild(buildPercentileMeter('Stress', data.stress.score, 'stress', data.stress.delta));
   }
+  if (meters.children.length) card.appendChild(meters);
+
+  /* --- inklapbare body (detail) --- */
+  const body = riskEl('div', 'risk-body');
 
   const pillarWrap = riskEl('div', 'risk-pillars');
   for (const p of RISK_PILLARS) {
@@ -1890,9 +1918,20 @@ async function loadRates() {
       kpiMortgageValueEl.textContent = data.mortgage.rate.toLocaleString('nl-NL', { minimumFractionDigits: 2 }) + '%';
       kpiMortgageSubEl.textContent = 'NL-gem. · ~10j vast';
       renderRateSpark(kpiMortgageSparkEl, data.mortgage.spark, data.mortgage.spark_period);
+      // Secundair, klein: ABN AMRO's geadverteerde 10j-tarief ter vergelijking.
+      const abn = data.mortgage.abn_rate;
+      if (kpiMortgageAbnEl) {
+        if (typeof abn === 'number' && Number.isFinite(abn)) {
+          kpiMortgageAbnEl.textContent = `ABN AMRO: ${abn.toLocaleString('nl-NL', { minimumFractionDigits: 2 })}%`;
+          kpiMortgageAbnEl.hidden = false;
+        } else {
+          kpiMortgageAbnEl.hidden = true;
+        }
+      }
     } else {
       kpiMortgageValueEl.textContent = '–';
       kpiMortgageSubEl.textContent = data.mortgage_error ? 'Niet beschikbaar' : 'Laden…';
+      if (kpiMortgageAbnEl) kpiMortgageAbnEl.hidden = true;
     }
     applyWarn(kpiMortgageWarnEl, staleWarning({
       error: data.mortgage_error,
