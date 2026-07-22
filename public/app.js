@@ -1888,7 +1888,7 @@ async function loadRates() {
 
     if (data.mortgage) {
       kpiMortgageValueEl.textContent = data.mortgage.rate.toLocaleString('nl-NL', { minimumFractionDigits: 2 }) + '%';
-      kpiMortgageSubEl.textContent = `${data.mortgage.years}j vast NHG · ${data.mortgage.bank}`;
+      kpiMortgageSubEl.textContent = 'NL-gem. · ~10j vast';
       renderRateSpark(kpiMortgageSparkEl, data.mortgage.spark, data.mortgage.spark_period);
     } else {
       kpiMortgageValueEl.textContent = '–';

@@ -15,32 +15,34 @@
  *    Extra winst: de API levert de volledige geschiedenis, dus de trendlijn
  *    is meteen echt i.p.v. dat hij zich maandenlang moet opbouwen.
  *
- * 2. Hypotheekrente — best-effort scraper op actuelerentestanden.nl
- *    (robots.txt staat scrapen van deze publieke pagina's toe). ABN AMRO-
- *    specifieke pagina, 10 jaar vast met NHG, product "Woning Hypotheek"
- *    (hun standaard; er is ook een goedkopere "Budget"-variant, maar Woning
- *    is representatiever voor "de rente van ABN AMRO"). Regex i.p.v. een
- *    HTML-parser-dependency: de tabel heeft stabiele class-namen en levert
- *    de rente in een data-order-attribuut. Hiervoor bestaat géén gratis
- *    historische API, dus die trend bouwt zich wél dagelijks op via de
- *    rate_history-tabel — de eerste dagen dus nog geen lijn.
+ * 2. Hypotheekrente — óók de ECB, maar de MIR-statistiek (MFI-rentes): het
+ *    NL-gemiddelde op nieuwe woninghypotheken met rentevastperiode >5 en
+ *    ≤10 jaar. Dit verving een scrape van één bank (ABN AMRO): dat was een
+ *    geadverteerd tarief, geen gemiddelde, én fragiel. MIR is een officieel,
+ *    volume-gewogen gemiddelde over alle geldverstrekkers, mét eigen historie
+ *    (dus geen zelf-opgebouwde rate_history meer nodig).
  *
  * Bij een fout blijft de laatst bekende waarde staan en schuift okAt niet
  * mee, zodat de UI kan tonen dat de data verouderd is. Nooit crashen.
- * Ververst 1x per dag: beide bewegen traag (de ECB beslist ~8x per jaar).
+ * Ververst 1x per dag: beide bewegen traag (MIR is bovendien maandelijks).
  */
-
-const { db } = require('./db');
 
 /* Depositofaciliteit (DFR), dagreeks. De reeks herhaalt dezelfde stand elke
    dag tot de ECB 'm wijzigt, dus de overgangen zijn de interessante punten. */
 const ECB_URL =
   'https://data-api.ecb.europa.eu/service/data/FM/D.U2.EUR.4F.KR.DFR.LEV' +
   '?format=jsondata&startPeriod=';
-const MORTGAGE_URL = 'https://www.actuelerentestanden.nl/hypotheek/rente/abn-amro';
+// Hypotheek: officiële MIR-statistiek (ECB/DNB) — NL gemiddelde rente op
+// nieuwe woninghypotheken met rentevastperiode >5 en ≤10 jaar (de bucket die
+// het dichtst bij "10 jaar vast" ligt; MIR kent geen exact-10-jaar-bucket).
+// Dit is een volume-gewogen gemiddelde over álle geldverstrekkers — het echte
+// "gemiddelde", niet één bank of een geadverteerd NHG-tarief. Maandelijks,
+// ~6 weken lag. Vanaf jan 2026 op verzoek.
+const MORTGAGE_URL =
+  'https://data-api.ecb.europa.eu/service/data/MIR/M.NL.B.A2C.P.R.A.2250.EUR.N' +
+  '?format=jsondata&startPeriod=2026-01';
 const REFRESH_MS = 24 * 60 * 60 * 1000; // 1x per dag
 const FETCH_TIMEOUT_MS = 15000;
-const HISTORY_DAYS = 180;       // hypotheek: eigen opgebouwde geschiedenis
 const ECB_HISTORY_DAYS = 730;   // 2 jaar ECB-historie voor de trendlijn
 const ECB_SPARK_POINTS = 90;    // genoeg resolutie om de stappen te zien
 
@@ -61,28 +63,10 @@ let cache = {
   ts: 0,
 };
 
-/* ---------- geschiedenis (voor de indicatieve trendgrafiek) ---------- */
-const upsertHistory = db.prepare(
-  `INSERT INTO rate_history (metric, date, rate) VALUES (?, ?, ?)
-   ON CONFLICT(metric, date) DO UPDATE SET rate = excluded.rate`,
-);
-
-function todayStr() {
-  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Amsterdam' }).format(new Date());
-}
-
-// Oud->nieuw, zoals sparklineSvg (frontend) verwacht.
-function historySpark(metric) {
-  const rows = db
-    .prepare('SELECT rate FROM rate_history WHERE metric = ? ORDER BY date DESC LIMIT ?')
-    .all(metric, HISTORY_DAYS);
-  return rows.map((r) => r.rate).reverse();
-}
-
-/* ---------- ECB-depositorente (officiële API) ---------- */
-// Reeks van ~730 dagen terugbrengen tot een handvol punten voor de sparkline,
-// met behoud van de tijdsverhouding — zo blijven de plateaus en de stapjes
-// zichtbaar zoals ze werkelijk vielen.
+/* ---------- ECB SDMX-helpers (gedeeld door depositorente + hypotheek) ---------- */
+// Reeks terugbrengen tot een handvol punten voor de sparkline, met behoud van
+// de tijdsverhouding — zo blijven plateaus en stapjes zichtbaar zoals ze
+// werkelijk vielen.
 function downsample(values, target) {
   if (values.length <= target) return values;
   const step = (values.length - 1) / (target - 1);
@@ -91,36 +75,36 @@ function downsample(values, target) {
   return out;
 }
 
-async function fetchEcb() {
-  const from = new Date(Date.now() - ECB_HISTORY_DAYS * 864e5).toISOString().slice(0, 10);
+// Haalt een SDMX-JSON-reeks op en levert de observaties als {date, rate},
+// oud->nieuw. Defensief uitpakken — bij een formaatwijziging liever een nette
+// fout dan een half gevulde kaart.
+async function fetchSdmxPoints(url) {
   const ctrl = new AbortController();
   const timeout = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT_MS);
   let json;
   try {
-    const r = await fetch(ECB_URL + from, {
-      signal: ctrl.signal,
-      headers: { ...UA, Accept: 'application/json' },
-    });
+    const r = await fetch(url, { signal: ctrl.signal, headers: { ...UA, Accept: 'application/json' } });
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
     json = await r.json();
   } finally {
     clearTimeout(timeout);
   }
-
-  // SDMX-JSON: observaties zijn geïndexeerd, de bijbehorende datums staan in
-  // een aparte dimensie-lijst. Defensief uitpakken — bij een formaatwijziging
-  // liever een nette fout dan een half gevulde kaart.
   const timeDim = json?.structure?.dimensions?.observation?.find((d) => d.id === 'TIME_PERIOD');
   const series = json?.dataSets?.[0]?.series;
   const firstSeries = series && Object.values(series)[0];
   if (!timeDim || !firstSeries?.observations) throw new Error('onverwacht antwoordformaat');
-
   const times = timeDim.values.map((v) => v.id);
-  const points = Object.keys(firstSeries.observations)
+  return Object.keys(firstSeries.observations)
     .map(Number)
     .sort((a, b) => a - b)
     .map((i) => ({ date: times[i], rate: firstSeries.observations[String(i)][0] }))
     .filter((p) => p.date && Number.isFinite(p.rate));
+}
+
+/* ---------- ECB-depositorente ---------- */
+async function fetchEcb() {
+  const from = new Date(Date.now() - ECB_HISTORY_DAYS * 864e5).toISOString().slice(0, 10);
+  const points = await fetchSdmxPoints(ECB_URL + from);
   if (points.length < 2) throw new Error('te weinig observaties');
 
   // Overgangen isoleren. Let op: het eerste punt is het begin van ons venster,
@@ -146,36 +130,22 @@ async function fetchEcb() {
   };
 }
 
-// ABN AMRO-pagina heeft twee producttabellen (Budget + Woning). We pakken
-// "Woning" (hun standaard hypotheek); bij een layoutwijziging valt hij terug
-// op de eerste gevonden tabel i.p.v. helemaal niets te tonen.
-function parseMortgage(html) {
-  const tables = html.match(
-    /<table class="finckers-datatable finckers-table-mortgage finckers-table-mortgage-product"[^>]*>[\s\S]*?<\/table>/g,
-  );
-  if (!tables || !tables.length) return null;
-  const table = tables.find((t) => /ffa_product=Woning/.test(t)) || tables[0];
-  const m = table.match(/data-order=10>10 jaar<\/td>\s*<td data-order=([\d.]+)>/);
-  if (!m) return null;
-  const rate = parseFloat(m[1]);
-  if (!Number.isFinite(rate)) return null;
-  return { years: 10, bank: 'ABN AMRO', product: 'Woning Hypotheek', rate };
-}
-
-async function fetchHtml(url) {
-  const ctrl = new AbortController();
-  const timeout = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT_MS);
-  try {
-    const r = await fetch(url, { signal: ctrl.signal, headers: UA });
-    if (!r.ok) throw new Error(`HTTP ${r.status}`);
-    return await r.text();
-  } finally {
-    clearTimeout(timeout);
-  }
+/* ---------- Hypotheekrente: NL-gemiddelde (ECB MIR) ---------- */
+// Maandreeks vanaf jan 2026. In tegenstelling tot de depositorente is dit geen
+// stapfunctie maar een doorlopend gemiddelde, dus de hele reeks is de spark;
+// geen "sinds"-detectie nodig.
+async function fetchEcbMortgage() {
+  const points = await fetchSdmxPoints(MORTGAGE_URL);
+  if (!points.length) throw new Error('geen observaties');
+  return {
+    rate: points[points.length - 1].rate,
+    first_date: points[0].date,     // "2026-01" — voor het periode-label
+    last_date: points[points.length - 1].date,
+    spark: points.map((p) => p.rate),
+  };
 }
 
 async function refresh(broadcast) {
-  const today = todayStr();
   let ecb = null;
   let mortgage = null;
   let ecbError = null;
@@ -187,18 +157,10 @@ async function refresh(broadcast) {
     ecbError = String(err.message || err);
   }
   try {
-    mortgage = parseMortgage(await fetchHtml(MORTGAGE_URL));
-    // Een lege parse is géén succes: de pagina laadde (HTTP 200), maar de
-    // tabel is niet meer te vinden. Zonder deze check bleef de oude waarde
-    // stil staan en merkte je nooit dat de scraper stuk was.
-    if (!mortgage) throw new Error('hypotheektabel niet gevonden — site-structuur gewijzigd?');
+    mortgage = await fetchEcbMortgage();
   } catch (err) {
     mortgageError = String(err.message || err);
   }
-
-  // Alleen de hypotheek heeft eigen geschiedenisopbouw nodig; de ECB-reeks
-  // komt al mét historie uit de API.
-  if (mortgage) upsertHistory.run('mortgage_abn_10y', today, mortgage.rate);
 
   const now = Date.now();
   // Eén van de twee kan missen zonder de andere te verliezen: bij een fout
@@ -218,31 +180,25 @@ async function refresh(broadcast) {
   if (broadcast) broadcast('rates:update', { generated_at: now });
 }
 
-// Dagpunten omzetten naar een kort, eerlijk periode-label voor onder de
-// trendlijn. De hypotheekhistorie groeit dagelijks aan, dus die periode is
-// niet vast — hem hardcoden zou een langere reeks suggereren dan er is.
-function periodLabel(days) {
-  if (!days || days < 2) return null;
-  if (days >= 365) {
-    const years = Math.round(days / 365);
-    return years === 1 ? '1 jaar' : `${years} jaar`;
-  }
-  if (days >= 60) return `${Math.round(days / 30)} mnd`;
-  return `${days} dgn`;
+// "2026-01" -> "sinds jan '26". Kort periode-label onder de hypotheek-spark.
+const MONTHS_NL = ['jan', 'feb', 'mrt', 'apr', 'mei', 'jun', 'jul', 'aug', 'sep', 'okt', 'nov', 'dec'];
+function monthLabel(ym) {
+  const m = /^(\d{4})-(\d{2})$/.exec(String(ym || ''));
+  if (!m) return null;
+  return `sinds ${MONTHS_NL[+m[2] - 1]} '${m[1].slice(2)}`;
 }
 
 function snapshot() {
-  const mortgageSpark = cache.mortgage ? historySpark('mortgage_abn_10y') : [];
   return {
-    // De ECB-spark komt uit de API zelf, niet uit rate_history.
+    // Beide sparks komen uit de ECB-API zelf. Depositorente: 2-jaars venster.
     ecb: cache.ecb
-      ? { ...cache.ecb, spark_period: periodLabel(ECB_HISTORY_DAYS), ok_at: cache.ecbOkAt || null }
+      ? { ...cache.ecb, spark_period: '2 jaar', ok_at: cache.ecbOkAt || null }
       : null,
+    // Hypotheek: maandreeks vanaf jan 2026.
     mortgage: cache.mortgage
       ? {
         ...cache.mortgage,
-        spark: mortgageSpark,
-        spark_period: periodLabel(mortgageSpark.length),
+        spark_period: monthLabel(cache.mortgage.first_date),
         ok_at: cache.mortgageOkAt || null,
       }
       : null,
@@ -257,7 +213,7 @@ function snapshot() {
       ]
         .filter(Boolean)
         .join('; ') || null,
-    sources: { ecb: 'data-api.ecb.europa.eu', mortgage: 'actuelerentestanden.nl' },
+    sources: { ecb: 'data-api.ecb.europa.eu', mortgage: 'data-api.ecb.europa.eu (MIR)' },
   };
 }
 
